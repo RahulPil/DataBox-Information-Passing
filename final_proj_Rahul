@@ -170,28 +170,23 @@ Mat drawBorder(Mat& input) {
     int image_total_height = output.size().height;
     int image_total_width = output.size().width;
 
-    Rect border1(Point(0, 0), Point(image_total_height, image_total_width));
-    Scalar color1(255, 255, 255);
+    Scalar white(255, 255, 255);
+    Scalar black(0, 0, 0);
 
-    int thickness1 = 375;
-        
-    Rect border2(Point(25, 25), Point(image_total_height-25, image_total_width-25));
+    Rect complete_black(Point(0, 0), Point(image_total_height, image_total_width));
+    int complete_black_thickness = 200;
 
-    Scalar color2(0, 0, 0);
 
-    int thickness2 = 25;
+    Rect first_white_strip(Point(0, 0), Point(image_total_height, image_total_width));
+    int first_white_strip_thickness = 20;
 
-    Rect border3(Point(75, 75), Point(image_total_height - 75, image_total_width - 75));
+    Rect second_white_strip(Point(120, 120), Point(image_total_height-120, image_total_width-120));
+    int second_white_strip_thickness = 40;
 
-    Rect border4(Point(125, 125), Point(image_total_height - 125, image_total_width - 125));
 
-    Rect border5(Point(175, 175), Point(image_total_height - 175, image_total_width - 175));
-
-    rectangle(output, border1, color1, thickness1);
-    rectangle(output, border2, color2, thickness2);
-    rectangle(output, border3, color2, thickness2);
-    rectangle(output, border4, color2, thickness2);
-    rectangle(output, border5, color2, thickness2);
+    rectangle(output, complete_black, black, complete_black_thickness);
+    rectangle(output, first_white_strip, white, first_white_strip_thickness);
+    rectangle(output, second_white_strip, white, second_white_strip_thickness);
 
     return output;
 }
