@@ -1,6 +1,7 @@
 #define BIT_ISSET(var, pos) (!!((var) & (1ULL<<(pos))))
-#define BORDER_PERCENT_ERROR_THRESHHOLD 20
+#define BORDER_PERCENT_ERROR_THRESHHOLD 30
 #define EDGE_THREASHOLD 200
+#define BORDER_CELL_RATIO 4
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
@@ -43,7 +44,7 @@ const enum {
    black = 0,
    white,
    red,
-   green,  
+   green,
    yellow,
    blue,
    magenta,
@@ -51,15 +52,14 @@ const enum {
 };
 
 void showImg(const Mat& img, string name) {
-   namedWindow(name, WINDOW_NORMAL);
-   resizeWindow(name, img.cols / 2, img.rows / 2);
+   namedWindow(name);
    imshow(name, img);
 }
 
-void writeCell(Mat& db, const int cellN, const int cellIndex, const int val) {
-   int cellWidth = db.cols / cellN;
-   int r = (cellIndex / cellN) * cellWidth;
-   int c = (cellIndex % cellN) * cellWidth;
+void writeCell(Mat& db, const int cellN, const int cellIndex, const int val, const int offset = 0) {
+   int cellWidth = (db.cols - (2*offset)) / cellN;
+   int r = ((cellIndex / cellN) * cellWidth) + offset;
+   int c = ((cellIndex % cellN) * cellWidth) + offset;
    for (int row = 0; row < cellWidth; row++) {
       for (int col = 0; col < cellWidth; col++) {
          db.at<Vec3b>(r + row, c + col) = color[val];
@@ -67,7 +67,49 @@ void writeCell(Mat& db, const int cellN, const int cellIndex, const int val) {
    }
 }
 
-Mat makeDataBox(const char* data, const int dataArrSize, const int cellN, const int dbWidth, const int bitsPerCell = 1 /* can be 1,2,3 */) {
+Mat drawBorder(const Mat& input, vector<int> ratios, const int cellN) {
+   const int borderWidth1 = input.cols / cellN / BORDER_CELL_RATIO; // border width for 1 ratio
+   Mat output = input.clone();
+
+   // draw all border
+   int currentRatio = 0;
+   int offsetFromBorder = 0;
+   bool isWhite = true;
+   while (currentRatio < ratios.size()) {
+      for (int i = offsetFromBorder; i < (ratios[currentRatio] * borderWidth1) + offsetFromBorder; i++) {
+         for (int j = offsetFromBorder; j < input.cols - offsetFromBorder; j++) {
+            output.at<Vec3b>(j, i) = color[isWhite];
+            output.at<Vec3b>(i, j) = color[isWhite];
+            output.at<Vec3b>(j, input.cols - 1 - i) = color[isWhite];
+            output.at<Vec3b>(input.cols - 1 - i, j) = color[isWhite];
+         }
+      }
+      offsetFromBorder += (ratios[currentRatio] * borderWidth1); // set offset to point left at
+      currentRatio++;
+      isWhite = !isWhite;
+   }
+
+   // add cover top left corner with black and all others with white
+   Mat cat = imread("test3.jpg");
+   resize(cat, cat, Size(offsetFromBorder, offsetFromBorder));
+   for (int i = 0; i < offsetFromBorder; i++) {
+      for (int j = 0; j < offsetFromBorder; j++) {
+         output.at<Vec3b>(i, j) = cat.at<Vec3b>(i, j);
+      }
+   }
+
+   //// draw triange poining to corner
+   //for (int i = offsetFromBorder / 5; i < offsetFromBorder - (offsetFromBorder / 5); i++) {
+   //   for (int j = offsetFromBorder / 5; j < offsetFromBorder - (offsetFromBorder / 5); j++) {
+   //      if (i + j < offsetFromBorder)
+   //         output.at<Vec3b>(i, j) = color[white];
+   //   }
+   //}
+
+   return output;
+}
+
+Mat makeDataBox(const char* data, const int dataArrSize, const int cellN, const int dbWidth, const int bitsPerCell, const vector<int> ratios) {
    const int dims[] = { dbWidth, dbWidth };
    const int cellWidth = dbWidth / cellN;
    Mat db(2, dims, CV_8UC3, Scalar::all(0));
@@ -75,6 +117,12 @@ Mat makeDataBox(const char* data, const int dataArrSize, const int cellN, const 
       std::cout << "ERROR: can only do 1,2,3 bits per cell. Input: " << bitsPerCell << endl;
       return db;
    }
+
+   db = drawBorder(db, ratios, cellN);
+   int borderOffset = 0;
+   int BorderBase1 = db.cols / cellN / BORDER_CELL_RATIO;
+   for (int i : ratios) borderOffset += (i * BorderBase1);
+
    int val = 0;
    int bitIndex = 0;
    while (bitIndex < (dataArrSize * 8)) {
@@ -87,16 +135,16 @@ Mat makeDataBox(const char* data, const int dataArrSize, const int cellN, const 
          //std::cout << "1";
          val += pow(2, bitIndex % bitsPerCell);
 
-         
+
       }
       else cout << "0";
       if ((bitIndex + 1) % bitsPerCell == 0) {
-         writeCell(db, cellN, (((bitIndex + 1) / bitsPerCell) - 1), val);
+         writeCell(db, cellN, (((bitIndex + 1) / bitsPerCell) - 1), val, borderOffset);
          val = 0;
       }
       bitIndex++;
    }
-   if (val != 0) writeCell(db, cellN, (((bitIndex + 1) / bitsPerCell) - 1), val);
+   if (val != 0) writeCell(db, cellN, (((bitIndex + 1) / bitsPerCell) - 1), val, borderOffset);
    return db;
 }
 
@@ -193,68 +241,16 @@ void readDataBox(const Mat& db, const int bitsPerCell, const int resolution) {
 
 }
 
-Mat drawBorder(const Mat& input, vector<int> ratios, const int borderWidth1) {
-   Mat output = input.clone();
-   int totalCols = 0; // is all the cols to write
-   for (int a : ratios) totalCols += a;
-   totalCols *= borderWidth1;
-
-   // draw left wall
-   int currentRatio = 0;
-   int offsetFromBorder = 0;
-   bool isWhite = true;
-   while (currentRatio < ratios.size()) {
-      for (int i = offsetFromBorder; i < (ratios[currentRatio] * borderWidth1) + offsetFromBorder; i++) {
-         for (int j = offsetFromBorder; j < input.cols - offsetFromBorder; j++) {
-            output.at<Vec3b>(j, i) = color[isWhite];
-            output.at<Vec3b>(i, j) = color[isWhite];
-            output.at<Vec3b>(j, input.cols - 1 - i) = color[isWhite];
-            output.at<Vec3b>(input.cols - 1 - i, j) = color[isWhite];
-         }
-      }
-      offsetFromBorder += (ratios[currentRatio] * borderWidth1); // set offset to point left at
-      currentRatio++;
-      isWhite = !isWhite;
-   }
-
-   // add cover top left corner with black and all others with white
-   Mat cat = imread("test3.jpg");
-   resize(cat, cat, Size(offsetFromBorder, offsetFromBorder));
-   for (int i = 0; i < offsetFromBorder; i++) {
-      for (int j = 0; j < offsetFromBorder; j++) {
-         output.at<Vec3b>(i, j) = cat.at<Vec3b>(i, j);
-      }
-   }
-
-   //// draw triange poining to corner
-   //for (int i = offsetFromBorder / 5; i < offsetFromBorder - (offsetFromBorder / 5); i++) {
-   //   for (int j = offsetFromBorder / 5; j < offsetFromBorder - (offsetFromBorder / 5); j++) {
-   //      if (i + j < offsetFromBorder)
-   //         output.at<Vec3b>(i, j) = color[white];
-   //   }
-   //}
-   
-   return output;
-}
-
-Mat border(const Mat& input, const int cellN, vector<int> ratios) {
-   int borderWidth1 = input.cols / cellN / 4; // border
-   Mat output = drawBorder(input, ratios, borderWidth1);
-
-   return output;
-}
-
 int getError100(const float a, const float b) {
-   if (a - b == 0) return 0; // cant divide by 0, so return 100 percent error
+   if (a - b == 0) return 0; // cant divide by 0, but 0 is perfect val
    return (abs(a - b) * 100) / a;
 }
 
 bool ratioMatch(vector<int> ratioFound, vector<int> ratioDB) {
-
-   for (int i = 1; i < ratioDB.size() -1;i++) {
-      float avgBase = (ratioFound[6] + ratioFound[7]) /2; // HARD CODED ()
+   for (int i = 1; i < ratioDB.size() - 1; i++) {
+      float avgBase = (ratioFound[6] + ratioFound[7]) / 2; // HARD CODED ()
       float val = ratioFound[i] / avgBase; // divide by the first number for ratio
-      if (getError100((float)ratioDB[i],val) > BORDER_PERCENT_ERROR_THRESHHOLD) {
+      if (getError100((float)ratioDB[i], val) > BORDER_PERCENT_ERROR_THRESHHOLD) {
          return false;
       }
    }
@@ -262,7 +258,6 @@ bool ratioMatch(vector<int> ratioFound, vector<int> ratioDB) {
 }
 
 bool ratioMatchFlipped(vector<int> ratioFound, vector<int> ratioDB) {
-
    for (int i = 1; i < ratioDB.size() - 1; i++) {
       float avgBase = (ratioFound[2] + ratioFound[3]) / 2; // HARD CODED ()
       float val = ratioFound[i] / avgBase; // divide by the first number for ratio
@@ -281,13 +276,13 @@ vector<vector<Point>> findDataBoxWEdgeImageH(const Mat& input, vector<int> ratio
    vector<int> ratiosFlipped;
    for (int i = ratios.size() - 1; i >= 0; i--)
       ratiosFlipped.push_back(ratios[i]);
-   
+
    for (int r = 0; r < input.rows; r++) {
       int lastEdge = -1;
       for (int c = 0; c < input.cols; c++) {
-         bool edge = input.at<Vec<uchar, 1>>(r,c)[0] > EDGE_THREASHOLD;
+         bool edge = input.at<Vec<uchar, 1>>(r, c)[0] > EDGE_THREASHOLD;
          if (edge) {
-            currentPattern.push_back(c-lastEdge);
+            currentPattern.push_back(c - lastEdge);
             currentPositions.push_back(c);
             if (currentPattern.size() > ratios.size()) {
                for (int i = 0; i < currentPattern.size() - 1; i++) {
@@ -316,7 +311,7 @@ vector<vector<Point>> findDataBoxWEdgeImageH(const Mat& input, vector<int> ratio
       currentPositions.clear();
    }
 
-   vector<vector<Point>> output = {outputLeft, outputRight};
+   vector<vector<Point>> output = { outputLeft, outputRight };
    return output;
 }
 
@@ -367,71 +362,12 @@ vector<vector<Point>> findDataBoxWEdgeImageV(const Mat& input, vector<int> ratio
    return output;
 }
 
-Mat findDataBoxWEdgeImageVs(const Mat& img, vector<int> ratios) {
-   Mat test = img.clone();
-   GaussianBlur(test, test, Size(7, 7), 2.0, 2.0);
-   cvtColor(test, test, COLOR_BGR2GRAY);
-   Canny(test, test, 20, 60);
-   showImg(test, "test");
-   waitKey(0);
-   Mat output = img.clone();
-
-   // traverse horizontally
-   int edgeThreashhold = 200; // above is white
-   vector<int> currentPattern;
-   vector<int> currentPositions;
-   bool lastPixelWhite = false;
-   Point firstDetection;
-   Point lastDetection;
-   bool detectedFirst = false;
-   vector<int> ratiosFlipped;
-   for (int i = ratios.size() - 1; i >= 0; i--)
-      ratiosFlipped.push_back(ratios[i]);
-
-   for (int c = 0; c < img.cols; c++) {
-      int lastEdge = -1;
-      //int lastEdgeCol = 0;
-      for (int r = 0; r < img.rows; r++) {
-         bool edge = test.at<Vec<uchar, 1>>(r, c)[0] > edgeThreashhold;
-
-         if (edge) {
-            currentPattern.push_back(r - lastEdge);
-            currentPositions.push_back(r);
-            if (currentPattern.size() > ratios.size()) {
-               for (int i = 0; i < currentPattern.size() - 1; i++) {
-                  currentPattern[i] = currentPattern[i + 1];
-                  currentPositions[i] = currentPositions[i + 1];
-               }
-               // remove last two in vector
-               currentPattern.pop_back();
-               currentPositions.pop_back();
-            }
-            if (currentPattern.size() == ratios.size()) {
-               if (ratioMatch(currentPattern, ratios)) {
-                  circle(output, Point(c, lastEdge), 3, color[red]);
-                  cout << r << " " << c << " found the edge bro" << endl;
-               }
-               else if (ratioMatchFlipped(currentPattern, ratiosFlipped)) {
-                  circle(output, Point(c, currentPositions[0]), 3, color[green]);
-                  cout << r << " " << c << " found the edge bro" << endl;
-               }
-            }
-            lastEdge = r;
-         }
-      }
-      currentPattern.clear();
-      currentPositions.clear();
-   }
-   return output;
-}
-
 Mat findDataBox(const Mat& img, vector<int> ratios) {
    Mat edgeImage = img.clone();
    Mat output = img.clone();
 
+   GaussianBlur(edgeImage, edgeImage, Size(7, 7), 2, 2);
    cvtColor(edgeImage, edgeImage, COLOR_BGR2GRAY);
-   GaussianBlur(edgeImage, edgeImage, Size(5, 5), 1, 1);
-   
    Canny(edgeImage, edgeImage, 20, 60);
    showImg(edgeImage, "test");
    waitKey(0);
@@ -459,14 +395,13 @@ int main(int argc, char* argv[])
    std::cout << "length = " << s.length() << endl;
    const char* sd = s.data();
    char* dataOut = (char*)malloc(sizeof(char) * (s.length() + 1));
-   Mat overlay = makeDataBox(sd, s.length(), 32, 1024, 3);
-   readDataBox(overlay, 1, 32);
 
-   vector<int> ratios = { 2, 6, 2, 3, 2, 2, 1, 1, 3, 2 }; // ratio 1:6:2:3:2:2 total p = 16 = 4 cells (DO NOT CHANGE) RatioMatch function has HARD CODE
-   vector<int> ratiosFLIP;
-   for (int i = ratios.size() - 1; i >= 0; i--) ratiosFLIP.push_back(ratios[i]);
+   vector<int> borderRatios = { 2, 6, 2, 3, 2, 2, 1, 1, 3, 2 }; // ratio 1:6:2:3:2:2 total p = 16 = 4 cells (DO NOT CHANGE) RatioMatch function has HARD CODE
 
-   overlay = border(overlay, 32, ratios);
+   Mat overlay = makeDataBox(sd, s.length(), 32, 1024, 3, borderRatios);
+   showImg(overlay, "ovalaaaa.jpg");
+   waitKey(0);
+   //readDataBox(overlay, 1, 32);
 
    Mat overlay2 = overlay.clone();
 
@@ -477,14 +412,14 @@ int main(int argc, char* argv[])
    resizeWindow("overlay2 Image", overlay2.cols / 2, overlay2.rows / 2);
    imshow("overlay2 Image", overlay2);
    imwrite("overlay2.jpg", overlay2);
-   overlay = findDataBox(real, ratios);
+   overlay = findDataBox(real, borderRatios);
 
 
    namedWindow("overlay Image", WINDOW_NORMAL);
-   resizeWindow("overlay Image", overlay.cols / 2, overlay.rows / 2);  
+   resizeWindow("overlay Image", overlay.cols / 2, overlay.rows / 2);
    imshow("overlay Image", overlay);
    imwrite("overlay.jpg", overlay);
-   
+
    waitKey(0);
 
    return 0;
