@@ -2,6 +2,7 @@
 #define BORDER_PERCENT_ERROR_THRESHHOLD 30
 #define EDGE_THREASHOLD 200
 #define BORDER_CELL_RATIO 4
+#define _USE_MATH_DEFINES
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
@@ -26,6 +27,7 @@
 #include <iostream>
 #include <iomanip>
 #include <opencv2/features2d.hpp>
+#include <cmath>
 
 using namespace cv;
 using namespace std;
@@ -54,6 +56,7 @@ const enum {
 void showImg(const Mat& img, string name) {
    namedWindow(name);
    imshow(name, img);
+   imwrite(name, img);
 }
 
 void writeCell(Mat& db, const int cellN, const int cellIndex, const int val, const int offset = 0) {
@@ -268,7 +271,7 @@ bool ratioMatchFlipped(vector<int> ratioFound, vector<int> ratioDB) {
    return true;
 }
 
-vector<vector<Point>> findDataBoxWEdgeImageH(const Mat& input, vector<int> ratios) {
+Mat findDataBoxWEdgeImageH(const Mat& input, vector<int> ratios) {
    vector<Point> outputLeft;
    vector<Point> outputRight;
    vector<int> currentPattern;
@@ -311,11 +314,15 @@ vector<vector<Point>> findDataBoxWEdgeImageH(const Mat& input, vector<int> ratio
       currentPositions.clear();
    }
 
-   vector<vector<Point>> output = { outputLeft, outputRight };
+   //vector<vector<Point>> output = { outputLeft, outputRight };
+   Mat output(Size(input.cols,input.cols),CV_8UC1,Scalar(0));
+   for (Point p : outputLeft) output.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
+   for (Point p : outputRight) output.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
+  // showImg(output, "output of points.jpg");
+   //waitKey(0);
    return output;
 }
-
-vector<vector<Point>> findDataBoxWEdgeImageV(const Mat& input, vector<int> ratios) {
+Mat findDataBoxWEdgeImageV(const Mat& input, vector<int> ratios) {
    vector<Point> outputLeft;
    vector<Point> outputRight;
    vector<int> currentPattern;
@@ -358,22 +365,60 @@ vector<vector<Point>> findDataBoxWEdgeImageV(const Mat& input, vector<int> ratio
       currentPositions.clear();
    }
 
-   vector<vector<Point>> output = { outputLeft, outputRight };
+   Mat output(Size(input.cols, input.cols), CV_8UC1, Scalar(0));
+   for (Point p : outputLeft) output.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
+   for (Point p : outputRight) output.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
+   // showImg(output, "output of points.jpg");
+    //waitKey(0);
    return output;
 }
 
 Mat findDataBox(const Mat& img, vector<int> ratios) {
    Mat edgeImage = img.clone();
+   Mat linesOut = img.clone();
    Mat output = img.clone();
 
    GaussianBlur(edgeImage, edgeImage, Size(7, 7), 2, 2);
    cvtColor(edgeImage, edgeImage, COLOR_BGR2GRAY);
    Canny(edgeImage, edgeImage, 20, 60);
-   showImg(edgeImage, "test");
-   waitKey(0);
-   vector<vector<Point>> pointsH = findDataBoxWEdgeImageH(edgeImage, ratios);
-   vector<vector<Point>> pointsV = findDataBoxWEdgeImageV(edgeImage, ratios);
+   //showImg(edgeImage, "test");
+   Mat pointsH = findDataBoxWEdgeImageH(edgeImage, ratios);
+   Mat pointsV = findDataBoxWEdgeImageV(edgeImage, ratios);
 
+   vector<Vec2f> lines1; // will hold the results of the detection
+   vector<Vec2f> lines2; // will hold the results of the detection
+   HoughLines(pointsH, lines1, 1, CV_PI / 180, 80, 0, 0); // runs the actual detection
+   HoughLines(pointsV, lines2, 1, CV_PI / 180, 80, 0, 0); // runs the actual detection
+   cvtColor(edgeImage, edgeImage, COLOR_GRAY2BGR);
+   // Draw the lines
+   for (size_t i = 0; i < lines1.size(); i++)
+   {
+      float rho = lines1[i][0], theta = lines1[i][1];
+      Point pt1, pt2;
+      double a = cos(theta), b = sin(theta);
+      double x0 = a * rho, y0 = b * rho;
+      pt1.x = cvRound(x0 + 4000 * (-b));
+      pt1.y = cvRound(y0 + 4000 * (a));
+      pt2.x = cvRound(x0 - 4000 * (-b));
+      pt2.y = cvRound(y0 - 4000 * (a));
+      line(edgeImage, pt1, pt2, Scalar(0, 0, 255), 2, LINE_AA);
+   }
+   for (size_t i = 0; i < lines2.size(); i++)
+   {
+      float rho = lines2[i][0], theta = lines2[i][1];
+      Point pt1, pt2;
+      double a = cos(theta), b = sin(theta);
+      double x0 = a * rho, y0 = b * rho;
+      pt1.x = cvRound(x0 + 4000 * (-b));
+      pt1.y = cvRound(y0 + 4000 * (a));
+      pt2.x = cvRound(x0 - 4000 * (-b));
+      pt2.y = cvRound(y0 - 4000 * (a));
+      line(edgeImage, pt1, pt2, Scalar(0, 0, 255), 2, LINE_AA);
+   }
+   //HoughLines(edgeImage, linesOut, 1, M_PI, 200);
+   showImg(edgeImage, "test.jpg");
+   waitKey(0);
+   /*
    for (int i = 0; i < pointsH[0].size(); i++)
       circle(output, pointsH[0][i], 3, color[red]);
    for (int i = 0; i < pointsH[1].size(); i++)
@@ -382,7 +427,7 @@ Mat findDataBox(const Mat& img, vector<int> ratios) {
       circle(output, pointsV[0][i], 3, color[yellow]);
    for (int i = 0; i < pointsV[1].size(); i++)
       circle(output, pointsV[1][i], 3, color[cyan]);
-
+      */
    return output;
 }
 
@@ -406,7 +451,7 @@ int main(int argc, char* argv[])
    Mat overlay2 = overlay.clone();
 
    Mat real = imread("testReal6.jpg");
-   showImg(real, "real");
+   showImg(real, "real.jpg");
 
    namedWindow("overlay2 Image", WINDOW_NORMAL);
    resizeWindow("overlay2 Image", overlay2.cols / 2, overlay2.rows / 2);
