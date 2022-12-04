@@ -555,7 +555,7 @@ Mat findDataBox(const Mat& img, vector<int> ratios) {
    };
 
     Mat Matrix = getPerspectiveTransform(srcPoints_for_perspective, dstPoints_for_perspective);
-    warpPerspective(edgeImage, unskewed_image, Matrix, Size(500, 500));
+    warpPerspective(img, unskewed_image, Matrix, Size(500, 500));
     showImg(unskewed_image, "unskew.jpg");
 
     showImg(edgeImage, "test.jpg");
