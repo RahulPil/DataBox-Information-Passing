@@ -595,10 +595,10 @@ Mat findDataBox(const Mat& img, vector<int> ratios) {
 
     Mat Matrix = getPerspectiveTransform(srcPoints_for_perspective, dstPoints_for_perspective);
     warpPerspective(img, unskewed_image, Matrix, Size(500, 500));
-    showImg(unskewed_image, "unskew.jpg");
+    //showImg(unskewed_image, "unskew.jpg");
 
-    showImg(edgeImage, "test.jpg");
-    waitKey(0);
+    //showImg(edgeImage, "test.jpg");
+    //waitKey(0);
     return output;
 }
 
@@ -624,16 +624,16 @@ int main(int argc, char* argv[])
     Mat real = imread("real.jpg");
     //showImg(real, "real.jpg");
 
-    namedWindow("overlay2 Image", WINDOW_NORMAL);
-    resizeWindow("overlay2 Image", overlay2.cols / 2, overlay2.rows / 2);
-    imshow("overlay2 Image", overlay2);
+    //namedWindow("overlay2 Image", WINDOW_NORMAL);
+    //resizeWindow("overlay2 Image", overlay2.cols / 2, overlay2.rows / 2);
+    //imshow("overlay2 Image", overlay2);
     cv::imwrite("overlay2.jpg", overlay2);
     overlay = findDataBox(real, borderRatios);
 
 
-    namedWindow("overlay Image", WINDOW_NORMAL);
-    resizeWindow("overlay Image", overlay.cols / 2, overlay.rows / 2);
-    imshow("overlay Image", overlay);
+    //namedWindow("overlay Image", WINDOW_NORMAL);
+    //resizeWindow("overlay Image", overlay.cols / 2, overlay.rows / 2);
+    //imshow("overlay Image", overlay);
     cv::imwrite("overlay.jpg", overlay);
 
     Mat foundDB = imread("unskew.jpg");
