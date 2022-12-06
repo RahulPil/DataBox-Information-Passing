@@ -1,8 +1,13 @@
 #define BIT_ISSET(var, pos) (!!((var) & (1ULL<<(pos))))
-#define BORDER_PERCENT_ERROR_THRESHHOLD 30
+#define BORDER_PERCENT_ERROR_THRESHHOLD 40
 #define EDGE_THREASHOLD 200
 #define BORDER_CELL_RATIO 4
 #define _USE_MATH_DEFINES
+#define HOUGH_THETA CV_PI/180
+#define HOUGH_RESOLUTION 1
+#define HOUGH_THRESHOLD(count) (count * 1)
+#define DRAWLINE_MULT 5
+#define WHITE_BLACK_THRESH 127
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
@@ -53,14 +58,16 @@ const enum {
    cyan
 };
 
-void showImg(const Mat& img, string name) {
-   namedWindow(name);
-   imshow(name, img);
+void showImg(const Mat& img, string name, int shrinkVal = 1) {
+   namedWindow(name, WINDOW_NORMAL);
    imwrite(name, img);
+   resizeWindow(name, Size(img.cols / shrinkVal, img.rows / shrinkVal));
+   imshow(name, img);
+   
 }
 
 void writeCell(Mat& db, const int cellN, const int cellIndex, const int val, const int offset = 0) {
-   int cellWidth = (db.cols - (2*offset)) / cellN;
+   int cellWidth = (db.cols - (2 * offset)) / cellN;
    int r = ((cellIndex / cellN) * cellWidth) + offset;
    int c = ((cellIndex % cellN) * cellWidth) + offset;
    for (int row = 0; row < cellWidth; row++) {
@@ -93,21 +100,14 @@ Mat drawBorder(const Mat& input, vector<int> ratios, const int cellN) {
    }
 
    // add cover top left corner with black and all others with white
-   Mat cat = imread("test3.jpg");
-   resize(cat, cat, Size(offsetFromBorder, offsetFromBorder));
    for (int i = 0; i < offsetFromBorder; i++) {
       for (int j = 0; j < offsetFromBorder; j++) {
-         output.at<Vec3b>(i, j) = cat.at<Vec3b>(i, j);
+         output.at<Vec3b>(i, j) = color[black];
+         output.at<Vec3b>(output.cols - 1 - i, j) = color[white];
+         output.at<Vec3b>(j, output.cols - 1 - i) = color[white];
+         output.at<Vec3b>(output.cols - 1 - j, output.cols - 1 - i) = color[white];
       }
    }
-
-   //// draw triange poining to corner
-   //for (int i = offsetFromBorder / 5; i < offsetFromBorder - (offsetFromBorder / 5); i++) {
-   //   for (int j = offsetFromBorder / 5; j < offsetFromBorder - (offsetFromBorder / 5); j++) {
-   //      if (i + j < offsetFromBorder)
-   //         output.at<Vec3b>(i, j) = color[white];
-   //   }
-   //}
 
    return output;
 }
@@ -271,7 +271,7 @@ bool ratioMatchFlipped(vector<int> ratioFound, vector<int> ratioDB) {
    return true;
 }
 
-Mat findDataBoxWEdgeImageH(const Mat& input, vector<int> ratios, int& pointCount) {
+pair<Vec2f, Vec2f> findDataBoxWEdgeImageH(const Mat& input, vector<int> ratios) {
    vector<Point> outputLeft;
    vector<Point> outputRight;
    vector<int> currentPattern;
@@ -297,14 +297,10 @@ Mat findDataBoxWEdgeImageH(const Mat& input, vector<int> ratios, int& pointCount
             }
             if (currentPattern.size() == ratios.size()) {
                if (ratioMatch(currentPattern, ratios)) {
-                  outputLeft.push_back(Point(lastEdge, r));
-                  //circle(output, Point(lastEdge, r), 3, color[red]);
-                  //cout << r << " " << c << " found the edge bro" << endl;
+                  outputLeft.push_back(Point(lastEdge + currentPattern[6] + currentPattern[7] - 2, r));
                }
                else if (ratioMatchFlipped(currentPattern, ratiosFlipped)) {
-                  outputRight.push_back(Point(currentPositions[0], r));
-                  //circle(output, Point(currentPositions[0], r), 3, color[green]);
-                  //cout << r << " " << c << " found the edge bro" << endl;
+                  outputRight.push_back(Point(currentPositions[0] - currentPattern[2] - currentPattern[3] + 2, r));
                }
             }
             lastEdge = c;
@@ -314,17 +310,68 @@ Mat findDataBoxWEdgeImageH(const Mat& input, vector<int> ratios, int& pointCount
       currentPositions.clear();
    }
 
-   //vector<vector<Point>> output = { outputLeft, outputRight };
-   Mat output(Size(input.cols,input.cols),CV_8UC1,Scalar(0));
-   for (Point p : outputLeft) output.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
-   for (Point p : outputRight) output.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
-   pointCount += outputLeft.size();
-   pointCount += outputRight.size();
-   //showImg(output, "output of points.jpg");
+   // Inefficient, but make matricies to pass to hough transform API
+   Mat outputRightImage(Size(input.cols, input.cols), CV_8UC1, Scalar(0));
+   for (Point p : outputRight) outputRightImage.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
+   Mat outputLeftImage(Size(input.cols, input.cols), CV_8UC1, Scalar(0));
+   for (Point p : outputLeft) outputLeftImage.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
+
+   //Mat slideDeckR = input.clone();
+   //Mat slideDeckL = input.clone();
+   //cvtColor(slideDeckR, slideDeckR, COLOR_GRAY2BGR);
+   //GaussianBlur(slideDeckR, slideDeckR, Size(7, 7), 2, 2);
+   //cvtColor(slideDeckL, slideDeckL, COLOR_GRAY2BGR);
+   //GaussianBlur(slideDeckL, slideDeckL, Size(7, 7), 2, 2);
+   //for (Point p : outputRight) circle(slideDeckR, p, 5, color[green], 3);
+   //for (Point p : outputLeft) circle(slideDeckL, p, 5, color[green], 3);
+   //showImg(slideDeckR, "slideDeckRH.jpg");
+   //showImg(slideDeckL, "slideDeckLH.jpg");
    //waitKey(0);
+
+   // top horizontal line
+   vector<Vec2f> outputLeftLine;
+   float thresholdL = HOUGH_THRESHOLD(outputLeft.size());
+   while (outputLeftLine.size() == 0) {
+      HoughLines(outputLeftImage, outputLeftLine, HOUGH_RESOLUTION, HOUGH_THETA, thresholdL);
+      if (outputLeftLine.size() == 0) thresholdL -= HOUGH_THRESHOLD(outputLeft.size()) / 20;
+      if (thresholdL <= 0) break;
+   }
+
+   // bottom horizontal line
+   vector<Vec2f> outputRightLine;
+   float thresholdR = HOUGH_THRESHOLD(outputRight.size());
+   while (outputRightLine.size() == 0) {
+      HoughLines(outputRightImage, outputRightLine, HOUGH_RESOLUTION, HOUGH_THETA, thresholdR);
+      if (outputRightLine.size() == 0) thresholdR -= HOUGH_THRESHOLD(outputRight.size()) / 20;
+      if (thresholdR <= 0) break;
+   }
+
+
+   Vec2f lineRight = { 0,0 };
+   for (Vec2f v : outputRightLine) {
+      double a = cos(v[1]), b = sin(v[1]);
+      double x0 = a * v[0], y0 = b * v[0];
+      lineRight[0] += x0;
+      lineRight[1] += y0;
+   }
+   lineRight[0] /= outputRightLine.size();
+   lineRight[1] /= outputRightLine.size();
+
+   Vec2f lineLeft = { 0,0 };
+   for (Vec2f v : outputLeftLine) {
+      double a = cos(v[1]), b = sin(v[1]);
+      double x0 = a * v[0], y0 = b * v[0];
+      lineLeft[0] += x0;
+      lineLeft[1] += y0;
+   }
+   lineLeft[0] /= outputLeftLine.size();
+   lineLeft[1] /= outputLeftLine.size();
+
+   pair<Vec2f, Vec2f> output(lineLeft, lineRight);
    return output;
 }
-Mat findDataBoxWEdgeImageV(const Mat& input, vector<int> ratios, int& pointCount) {
+
+pair<Vec2f, Vec2f> findDataBoxWEdgeImageV(const Mat& input, vector<int> ratios) {
    vector<Point> outputLeft;
    vector<Point> outputRight;
    vector<int> currentPattern;
@@ -350,14 +397,10 @@ Mat findDataBoxWEdgeImageV(const Mat& input, vector<int> ratios, int& pointCount
             }
             if (currentPattern.size() == ratios.size()) {
                if (ratioMatch(currentPattern, ratios)) {
-                  outputLeft.push_back(Point(c, lastEdge));
-                  //circle(output, Point(lastEdge, r), 3, color[red]);
-                  //cout << r << " " << c << " found the edge bro" << endl;
+                  outputLeft.push_back(Point(c, lastEdge + currentPattern[6] + currentPattern[7] - 2));
                }
                else if (ratioMatchFlipped(currentPattern, ratiosFlipped)) {
-                  outputRight.push_back(Point(c, currentPositions[0]));
-                  //circle(output, Point(currentPositions[0], r), 3, color[green]);
-                  //cout << r << " " << c << " found the edge bro" << endl;
+                  outputRight.push_back(Point(c, currentPositions[0] - currentPattern[2] - currentPattern[3] + 2));
                }
             }
             lastEdge = r;
@@ -367,75 +410,162 @@ Mat findDataBoxWEdgeImageV(const Mat& input, vector<int> ratios, int& pointCount
       currentPositions.clear();
    }
 
-   Mat output(Size(input.cols, input.cols), CV_8UC1, Scalar(0));
-   for (Point p : outputLeft) output.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
-   for (Point p : outputRight) output.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
-   // showImg(output, "output of points.jpg");
-    //waitKey(0);
-   pointCount += outputLeft.size();
-   pointCount += outputRight.size();
+   // Inefficient, but make matricies to pass to hough transform API
+   Mat outputRightImage(Size(input.cols, input.cols), CV_8UC1, Scalar(0));
+   for (Point p : outputRight) outputRightImage.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
+   Mat outputLeftImage(Size(input.cols, input.cols), CV_8UC1, Scalar(0));
+   for (Point p : outputLeft) outputLeftImage.at<Vec<uchar, 1>>(p.y, p.x)[0] = 255;
+
+   ////Mat slideDeckR(Size(input.cols, input.cols), CV_8UC3, Scalar(0));
+   //Mat slideDeckR = input.clone();
+   //Mat slideDeckL = input.clone();
+   //cvtColor(slideDeckR, slideDeckR, COLOR_GRAY2BGR);
+   //GaussianBlur(slideDeckR, slideDeckR, Size(7, 7), 2, 2);
+   //cvtColor(slideDeckL, slideDeckL, COLOR_GRAY2BGR);
+   //GaussianBlur(slideDeckL, slideDeckL, Size(7, 7), 2, 2);
+   //for (Point p : outputRight) circle(slideDeckR, p, 5, color[green], 3);
+   //for (Point p : outputLeft) circle(slideDeckL, p, 5, color[green], 3);
+   //showImg(slideDeckR, "slideDeckRV.jpg");
+   //showImg(slideDeckL, "slideDeckLV.jpg");
+   //waitKey(0);
+
+   vector<Vec2f> outputLeftLine;
+   float thresholdL = HOUGH_THRESHOLD(outputLeft.size());
+   while (outputLeftLine.size() == 0) {
+      HoughLines(outputLeftImage, outputLeftLine, HOUGH_RESOLUTION, HOUGH_THETA, thresholdL);
+      if (outputLeftLine.size() == 0) thresholdL -= HOUGH_THRESHOLD(outputLeft.size()) / 6;
+      if (thresholdL <= 0) break;
+   }
+
+   // bottom horizontal line
+   vector<Vec2f> outputRightLine;
+   float thresholdR = HOUGH_THRESHOLD(outputRight.size());
+   while (outputRightLine.size() == 0) {
+      HoughLines(outputRightImage, outputRightLine, HOUGH_RESOLUTION, HOUGH_THETA, thresholdR);
+      if (outputRightLine.size() == 0) thresholdR -= HOUGH_THRESHOLD(outputRight.size()) / 6;
+      if (thresholdR <= 0) break;
+   }
+
+   Vec2f lineRight = { 0,0 };
+   for (Vec2f v : outputRightLine) {
+      double a = cos(v[1]), b = sin(v[1]);
+      double x0 = a * v[0], y0 = b * v[0];
+      lineRight[0] += x0;
+      lineRight[1] += y0;
+   }
+   lineRight[0] /= outputRightLine.size();
+   lineRight[1] /= outputRightLine.size();
+
+   Vec2f lineLeft = { 0,0 };
+   for (Vec2f v : outputLeftLine) {
+      double a = cos(v[1]), b = sin(v[1]);
+      double x0 = a * v[0], y0 = b * v[0];
+      lineLeft[0] += x0;
+      lineLeft[1] += y0;
+   }
+   lineLeft[0] /= outputLeftLine.size();
+   lineLeft[1] /= outputLeftLine.size();
+
+   pair<Vec2f, Vec2f> output(lineLeft, lineRight);
    return output;
+}
+
+void drawLineStandardXY(Mat& img, Vec2f v) {
+   Point pt1(cvRound(v[0] + DRAWLINE_MULT * (-v[1])), cvRound(v[1] + DRAWLINE_MULT * (v[0])));
+   Point pt2(cvRound(v[0] - DRAWLINE_MULT * (-v[1])), cvRound(v[1] - DRAWLINE_MULT * (v[0])));
+   line(img, pt1, pt2, Scalar(0, 0, 255), 3, LINE_AA);
+}
+
+Point findWallIntersection(Vec2f v1, Vec2f v2) {
+   Point l1s(v1[0] - v1[1], v1[0] + v1[1]);
+   Point l1e(v1[0] + v1[1], -v1[0] + v1[1]);
+   Point l2s(v2[0] - v2[1], v2[0] + v2[1]);
+   Point l2e(v2[0] + v2[1], -v2[0] + v2[1]);
+
+   double a1 = l1e.y - l1s.y;
+   double b1 = l1s.x - l1e.x;
+   double c1 = a1 * (l1s.x) + b1 * (l1s.y);
+
+   // Line CD represented as a2x + b2y = c2
+   double a2 = l2e.y - l2s.y;
+   double b2 = l2s.x - l2e.x;
+   double c2 = a2 * (l2s.x) + b2 * (l2s.y);
+
+   double determinant = a1 * b2 - a2 * b1;
+
+   if (determinant == 0)
+   {
+      // The lines are parallel. This is simplified
+      // by returning a pair of FLT_MAX
+      return Point(FLT_MAX, FLT_MAX);
+   }
+   else
+   {
+      double x = (b2 * c1 - b1 * c2) / determinant;
+      double y = (a1 * c2 - a2 * c1) / determinant;
+      return Point(x, y);
+   }
+}
+
+int findRotation(const Mat& img, Point2f* srcPoints, Point2f* dstPointsForRotation) {
+   Mat colorCheck;
+   Mat Matrix = getPerspectiveTransform(srcPoints, dstPointsForRotation);
+   warpPerspective(img, colorCheck, Matrix, Size(500, 500));
+   if (colorCheck.at<Vec3b>(0, 0)[0] < WHITE_BLACK_THRESH && colorCheck.at<Vec3b>(0, 0)[1] < WHITE_BLACK_THRESH && colorCheck.at<Vec3b>(0, 0)[2] < WHITE_BLACK_THRESH)
+      return -1;
+   if (colorCheck.at<Vec3b>(0, colorCheck.cols - 1)[0] < WHITE_BLACK_THRESH && colorCheck.at<Vec3b>(0, colorCheck.cols - 1)[1] < WHITE_BLACK_THRESH && colorCheck.at<Vec3b>(0, colorCheck.cols - 1)[2] < WHITE_BLACK_THRESH)
+      return ROTATE_90_COUNTERCLOCKWISE;
+   if (colorCheck.at<Vec3b>(colorCheck.rows - 1, 0)[0] < WHITE_BLACK_THRESH && colorCheck.at<Vec3b>(colorCheck.rows - 1, 0)[1] < WHITE_BLACK_THRESH && colorCheck.at<Vec3b>(colorCheck.rows - 1, 0)[2] < WHITE_BLACK_THRESH)
+      return ROTATE_90_CLOCKWISE;
+   if (colorCheck.at<Vec3b>(colorCheck.rows - 1, colorCheck.cols - 1)[0] < WHITE_BLACK_THRESH && colorCheck.at<Vec3b>(colorCheck.rows - 1, colorCheck.cols - 1)[1] < WHITE_BLACK_THRESH && colorCheck.at<Vec3b>(colorCheck.rows - 1, colorCheck.cols - 1)[2] < WHITE_BLACK_THRESH)
+      return ROTATE_180;
+   return -1;
 }
 
 Mat findDataBox(const Mat& img, vector<int> ratios) {
    Mat edgeImage = img.clone();
-   Mat linesOut = img.clone();
-   Mat output = img.clone();
 
    GaussianBlur(edgeImage, edgeImage, Size(7, 7), 2, 2);
    cvtColor(edgeImage, edgeImage, COLOR_BGR2GRAY);
    Canny(edgeImage, edgeImage, 20, 60);
-   vector<Vec2f> lines1; // will hold the results of the detection
-   vector<Vec2f> lines2; // will hold the results of the detection
-   //showImg(edgeImage, "test");
-   int pointsCount = 0;
-   Mat pointsH = findDataBoxWEdgeImageH(edgeImage, ratios, pointsCount);
-   cout << "POINTS" << pointsCount << endl;
-   HoughLines(pointsH, lines1, 1, CV_PI / 180, pointsCount * .08, 0, 0); // runs the actual detection
-   pointsCount = 0;
-   Mat pointsV = findDataBoxWEdgeImageV(edgeImage, ratios, pointsCount);
-   cout << "POINTS" << pointsCount << endl;
-   HoughLines(pointsV, lines2, 1, CV_PI / 180, pointsCount * .08, 0, 0); // runs the actual detection
-   cvtColor(edgeImage, edgeImage, COLOR_GRAY2BGR);
-   // Draw the lines
-   for (size_t i = 0; i < lines1.size(); i++)
-   {
-      float rho = lines1[i][0], theta = lines1[i][1];
-      Point pt1, pt2;
-      double a = cos(theta), b = sin(theta);
-      double x0 = a * rho, y0 = b * rho;
-      pt1.x = cvRound(x0 + 4000 * (-b));
-      pt1.y = cvRound(y0 + 4000 * (a));
-      pt2.x = cvRound(x0 - 4000 * (-b));
-      pt2.y = cvRound(y0 - 4000 * (a));
-      line(edgeImage, pt1, pt2, Scalar(0, 0, 255), 2, LINE_AA);
+
+   pair<Vec2f, Vec2f> pointsH = findDataBoxWEdgeImageH(edgeImage, ratios);
+   pair<Vec2f, Vec2f> pointsV = findDataBoxWEdgeImageV(edgeImage, ratios);
+
+   //Mat EdgeCopy = edgeImage.clone();
+   //GaussianBlur(EdgeCopy, EdgeCopy, Size(5, 5), 2, 2);
+   //showImg(EdgeCopy, "edgeImageBefore.jpg", 4);
+   //waitKey(0);
+   //cvtColor(EdgeCopy, EdgeCopy, COLOR_GRAY2BGR);
+   //drawLineStandardXY(EdgeCopy, pointsH.first);
+   //drawLineStandardXY(EdgeCopy, pointsH.second);
+   //drawLineStandardXY(EdgeCopy, pointsV.first);
+   //drawLineStandardXY(EdgeCopy, pointsV.second);
+   //showImg(EdgeCopy, "edgeImageAfter.jpg", 4);
+   //waitKey(0);
+
+   Point p = findWallIntersection(pointsH.first, pointsV.first);
+   Point2f c1 = findWallIntersection(pointsH.first, pointsV.first);
+   Point2f c2 = findWallIntersection(pointsH.first, pointsV.second);
+   Point2f c3 = findWallIntersection(pointsH.second, pointsV.first);
+   Point2f c4 = findWallIntersection(pointsH.second, pointsV.second);
+
+   // unskew the image
+   Mat unskewed_image;
+   Point2f srcPoints[] = { c1, c3, c2, c4 };
+   Point2f dstPoints[] = { Point(0,0), Point(500, 0), Point(0, 500), Point(500, 500) };
+   Point2f dstPointsForRotation[] = { Point(40,40), Point(460, 40), Point(40, 460), Point(460, 460) };
+   Mat Matrix = getPerspectiveTransform(srcPoints, dstPoints);
+   warpPerspective(img, unskewed_image, Matrix, Size(500, 500));
+
+   int rotation = findRotation(img, srcPoints, dstPointsForRotation);
+   if (rotation != -1) {
+      rotate(unskewed_image, unskewed_image, rotation);
    }
-   for (size_t i = 0; i < lines2.size(); i++)
-   {
-      float rho = lines2[i][0], theta = lines2[i][1];
-      Point pt1, pt2;
-      double a = cos(theta), b = sin(theta);
-      double x0 = a * rho, y0 = b * rho;
-      pt1.x = cvRound(x0 + 4000 * (-b));
-      pt1.y = cvRound(y0 + 4000 * (a));
-      pt2.x = cvRound(x0 - 4000 * (-b));
-      pt2.y = cvRound(y0 - 4000 * (a));
-      line(edgeImage, pt1, pt2, Scalar(0, 0, 255), 2, LINE_AA);
-   }
-   //HoughLines(edgeImage, linesOut, 1, M_PI, 200);
-   showImg(edgeImage, "test.jpg");
+
+   //showImg(unskewed_image, "unskew.jpg");
    waitKey(0);
-   /*
-   for (int i = 0; i < pointsH[0].size(); i++)
-      circle(output, pointsH[0][i], 3, color[red]);
-   for (int i = 0; i < pointsH[1].size(); i++)
-      circle(output, pointsH[1][i], 3, color[green]);
-   for (int i = 0; i < pointsV[0].size(); i++)
-      circle(output, pointsV[0][i], 3, color[yellow]);
-   for (int i = 0; i < pointsV[1].size(); i++)
-      circle(output, pointsV[1][i], 3, color[cyan]);
-      */
-   return output;
+   return unskewed_image;
 }
 
 int main(int argc, char* argv[])
@@ -451,27 +581,12 @@ int main(int argc, char* argv[])
    vector<int> borderRatios = { 2, 6, 2, 3, 2, 2, 1, 1, 3, 2 }; // ratio 1:6:2:3:2:2 total p = 16 = 4 cells (DO NOT CHANGE) RatioMatch function has HARD CODE
 
    Mat overlay = makeDataBox(sd, s.length(), 32, 1024, 3, borderRatios);
-   //showImg(overlay, "ovalaaaa.jpg");
+   //showImg(overlay, "overlay.jpg");
    //waitKey(0);
-   //readDataBox(overlay, 1, 32);
+   Mat real = imread("testReal14.jpg");
 
-   Mat overlay2 = overlay.clone();
-
-   Mat real = imread("testReal10.jpg");
-   //showImg(real, "real.jpg");
-
-   namedWindow("overlay2 Image", WINDOW_NORMAL);
-   resizeWindow("overlay2 Image", overlay2.cols / 2, overlay2.rows / 2);
-   imshow("overlay2 Image", overlay2);
-   imwrite("overlay2.jpg", overlay2);
-   overlay = findDataBox(real, borderRatios);
-
-
-   namedWindow("overlay Image", WINDOW_NORMAL);
-   resizeWindow("overlay Image", overlay.cols / 2, overlay.rows / 2);
-   imshow("overlay Image", overlay);
-   imwrite("overlay.jpg", overlay);
-
+   Mat result = findDataBox(real, borderRatios);
+   showImg(result, "result.jpg");
    waitKey(0);
 
    return 0;
