@@ -677,12 +677,12 @@ Mat findCellPoints(const Mat& input, const int cellN) {
    const int dimsOWB[] = { cellNBorder, cellNBorder };
    Mat outputWBorder(2, dimsOWB, CV_32SC2, Scalar::all(0)); // each cell hold (row,col) of its pixel
    Mat edgeImage = input.clone();
-   Mat DrawPoints = input.clone();
+   //Mat DrawPoints = input.clone();
    float cellWidth = edgeImage.cols / cellNBorder;
 
    int cd2 = cellWidth / 2; // cell divided by 2
-   Scalar whiteRef = input.at<Vec3b>(cd2, cd2); // white pixel taken from image
-   Scalar blackRef = input.at<Vec3b>(cd2, input.cols - cd2); // black pixel taken from image
+   Scalar blackRef = input.at<Vec3b>(cd2, cd2); // white pixel taken from image
+   Scalar whiteRef = input.at<Vec3b>(cd2, input.cols - cd2); // black pixel taken from image
    Point(*getPointImg[4])(const int, const int, const int) = { pointTopWallImg, pointBottomWallImg, pointLeftWallImg, pointRightWallImg };
 
    int lastBlack = 0;
@@ -690,41 +690,47 @@ Mat findCellPoints(const Mat& input, const int cellN) {
    int lastEdge = 0;
    int countWall = 0;
    int countNothing = 0;
+
+   Mat inputMod = input.clone();
+   
+   GaussianBlur(inputMod, inputMod, Size(7, 7), 2, 2);
+   Mat DrawPoints = inputMod.clone();
    
    for (int j = 0; j < 4; j++) {
       for (int i = cd2; i < edgeImage.cols; i++) {
-         Scalar Color = input.at<Vec3b>(cd2, i);
-         bool isWhite = colorMatchVec3b(input.at<Vec3b>(getPointImg[j](cd2, i, input.cols - cd2)), whiteRef, COLOR_DIFF_THRESHOLD);
-         bool isBlack = colorMatchVec3b(input.at<Vec3b>(getPointImg[j](cd2, i, input.cols - cd2)), blackRef, COLOR_DIFF_THRESHOLD);
+         bool isWhite = colorMatchVec3b(inputMod.at<Vec3b>(getPointImg[j](cd2, i, input.cols - cd2)), whiteRef, COLOR_DIFF_THRESHOLD);
+         bool isBlack = colorMatchVec3b(inputMod.at<Vec3b>(getPointImg[j](cd2, i, input.cols - cd2)), blackRef, COLOR_DIFF_THRESHOLD);
 
          if (isWhite) {
             if (lastBlack > lastWhite) { // most recent was black AKA color change Edge detected
                int avg = (i + lastEdge - countNothing - 1) / 2;
-               countNothing = 0;
                Point p = getPointImg[j](cd2, avg, input.cols - cd2);
                outputWBorder.at<Vec<int, 2>>(getPointImg[j](0, countWall, cellNBorder)) = { p.x, p.y }; // row, col format
-               //circle(DrawPoints, p, 3, color[red], 2);
-               //showImg(DrawPoints, "DrawPoints.jpg");
-               //waitKey(0);
+               circle(DrawPoints, p, 3, color[red], 2);
+               showImg(DrawPoints, "DrawPoints.jpg");
+               waitKey(0);
                countWall++;
                if (countWall == cellNBorder) break;
                lastEdge = i;
+               i += cd2;
             }
+            countNothing = 0;
             lastWhite = i;
          }
          else if (isBlack) {
             if (lastBlack < lastWhite) { // most recent was black AKA color change Edge detected
                int avg = (i + lastEdge - countNothing - 1) / 2;
-               countNothing = 0;
                Point p = getPointImg[j](cd2, avg, input.cols - cd2);
                outputWBorder.at<Vec<int, 2>>(getPointImg[j](0, countWall, cellNBorder)) = { p.x, p.y }; // row, col format
-               //circle(DrawPoints, p, 3, color[red], 2);
-               //showImg(DrawPoints, "DrawPoints.jpg");
-               //waitKey(0);
+               circle(DrawPoints, p, 3, color[red], 2);
+               showImg(DrawPoints, "DrawPoints.jpg");
+               waitKey(0);
                countWall++;
                if (countWall == cellNBorder) break;
                lastEdge = i;
+               i += cd2;
             }
+            countNothing = 0;
             lastBlack = i;
          }
          else countNothing++;
@@ -746,9 +752,9 @@ Mat findCellPoints(const Mat& input, const int cellN) {
          Point pcs = Point(outputWBorder.at<Vec<int, 2>>(0,c)[0], outputWBorder.at<Vec<int, 2>>(0,c)[1]);
          Point pce = Point(outputWBorder.at<Vec<int, 2>>(cellNBorder - 1, c)[0], outputWBorder.at<Vec<int, 2>>(cellNBorder - 1, c)[1]);
          Point p = findCellIntersection(prs,pre,pcs,pce);
-         //circle(DrawPoints, p, 3, color[red], 2);
-         //showImg(DrawPoints, "DrawPoints.jpg");
-         //waitKey(0);
+         circle(DrawPoints, p, 3, color[red], 2);
+         showImg(DrawPoints, "DrawPoints.jpg");
+         waitKey(0);
          output.at<Vec<int, 2>>(r - 1, c - 1) = p;
       }
    }
@@ -785,25 +791,26 @@ int main(int argc, char* argv[])
    std::chrono::duration<double> elapsed = finish - start;
    std::cout << "Elapsed time: " << elapsed.count() << " s\n";
 
-
    //GaussianBlur(overlay, overlay, Size(7, 7), 2, 2);
    //cvtColor(overlay, overlay, COLOR_BGR2GRAY);
    //Canny(overlay, overlay, 20, 60);
    //cvtColor(overlay, overlay, COLOR_GRAY2BGR);
    //GaussianBlur(overlay, overlay, Size(7, 7), 2, 2);
-   //showImg(overlay, "overlayEdgeDetected.jpg");
-   //waitKey(0);
+   showImg(overlay, "DataBox.jpg");
+   waitKey(0);
 
-   //Mat real = imread("testReal18.jpg");
+   Mat real = imread("real1.jpg");
 
    start = std::chrono::high_resolution_clock::now();
-   //Mat result = findDataBox(real, borderRatios);
+   //showImg(real, "real.jpg");
+   //waitKey(0);
+   Mat result = findDataBox(real, borderRatios);
    finish = std::chrono::high_resolution_clock::now();
    elapsed = finish - start;
    std::cout << "Elapsed time total find: " << elapsed.count() << " s\n";
-   //readDataBox(result,3, 32); 
-   //showImg(result, "result.jpg");
-   //waitKey(0);
+
+   showImg(result, "result.jpg");
+   waitKey(0);
 
    Mat unskewed = imread("result.jpg");
    Mat cellPoints = findCellPoints(unskewed, cellN);
