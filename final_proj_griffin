@@ -1,7 +1,8 @@
 #define BIT_ISSET(var, pos) (!!((var) & (1ULL<<(pos))))
 #define BORDER_PERCENT_ERROR_THRESHHOLD 40
 #define EDGE_THREASHOLD 200
-#define BORDER_CELL_RATIO 4
+#define BORDER_RATIO 128
+#define BORDER_WIDTH_1(size) (size/BORDER_RATIO)
 #define _USE_MATH_DEFINES
 #define HOUGH_THETA CV_PI/180
 #define HOUGH_RESOLUTION 1
@@ -11,7 +12,8 @@
 #define WHITE_BLACK_THRESH 127
 #define HISTOGRAM_SIZE 8
 #define BUCKET_SIZE (256/HISTOGRAM_SIZE)
-#define STARTER_DATA_OFFSET 1
+#define STARTER_DATA_OFFSET 8
+#define COLOR_DIFF_THRESHOLD 30
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
@@ -66,7 +68,7 @@ const enum {
 void drawLineStandardXY(Mat& img, Vec2f v) {
    Point pt1(cvRound(v[0] + DRAWLINE_MULT * (-v[1])), cvRound(v[1] + DRAWLINE_MULT * (v[0])));
    Point pt2(cvRound(v[0] - DRAWLINE_MULT * (-v[1])), cvRound(v[1] - DRAWLINE_MULT * (v[0])));
-   line(img, pt1, pt2, color[white], 1, LINE_AA);
+   line(img, pt1, pt2, color[red], 3, LINE_AA);
 }
 
 void drawLineParameterSpace(Mat& img, Vec2f v) {
@@ -82,11 +84,11 @@ void showImg(const Mat& img, string name, int shrinkVal = 1) {
    imwrite(name, img);
    resizeWindow(name, Size(img.cols / shrinkVal, img.rows / shrinkVal));
    imshow(name, img);
-   
+
 }
 
-void writeCell(Mat& db, const int cellN, const int cellIndex, const int val, const int offset = 0) {
-   int cellWidth = (db.cols - (2 * offset)) / cellN;
+void writeCell(Mat& db, const int cellN, const int cellIndex, const int val, const float offset = 0) {
+   float cellWidth = (db.cols - (2 * offset)) / cellN;
    int r = ((cellIndex / cellN) * cellWidth) + offset;
    int c = ((cellIndex % cellN) * cellWidth) + offset;
    for (int row = 0; row < cellWidth; row++) {
@@ -96,8 +98,8 @@ void writeCell(Mat& db, const int cellN, const int cellIndex, const int val, con
    }
 }
 
-Mat drawBorder(const Mat& input, vector<int> ratios, const int cellN) {
-   const int borderWidth1 = input.cols / cellN / BORDER_CELL_RATIO; // border width for 1 ratio
+Mat drawBorderRatio(const Mat& input, vector<int> ratios) {
+   const int borderWidth1 = BORDER_WIDTH_1(input.cols);
    Mat output = input.clone();
 
    // draw all border
@@ -131,26 +133,44 @@ Mat drawBorder(const Mat& input, vector<int> ratios, const int cellN) {
    return output;
 }
 
+Mat drawBorderCells(const Mat& input, const int cellN, float& borderOffset) {
+   Mat output = input.clone();
+   bool even = cellN % 2 == 0;
+   bool isWhite = 1;
+   
+   for (int i = 0; i < cellN; i++) {
+      writeCell(output, cellN, i, isWhite, borderOffset);
+      writeCell(output, cellN, i + (cellN * (cellN - 1)), (!even == isWhite), borderOffset);
+      writeCell(output, cellN, cellN * i, isWhite, borderOffset);
+      writeCell(output, cellN, (cellN * i) + (cellN - 1), (!even == isWhite), borderOffset);
+      isWhite = !isWhite;
+   }
+
+   borderOffset += (float)(output.cols - (2 * borderOffset)) / cellN;
+   return output;
+}
+
 Mat makeDataBox(const char* data, const int dataArrSize, const int cellN, const int dbWidth, const int bitsPerCell, const vector<int> ratios) {
    const int dims[] = { dbWidth, dbWidth };
-   const int cellWidth = dbWidth / cellN;
    Mat db(2, dims, CV_8UC3, Scalar::all(0));
    if (bitsPerCell > 3 || bitsPerCell < 1) {
       std::cout << "ERROR: can only do 1,2,3 bits per cell. Input: " << bitsPerCell << endl;
       return db;
    }
 
-   db = drawBorder(db, ratios, cellN);
-   int borderOffset = 0;
-   int BorderBase1 = db.cols / cellN / BORDER_CELL_RATIO;
-   for (int i : ratios) borderOffset += (i * BorderBase1);
+   db = drawBorderRatio(db, ratios);
+   float borderOffset = 0;
+   float borderBase1 = BORDER_WIDTH_1(db.cols);
+   for (int i : ratios) borderOffset += (i * borderBase1);
 
-   writeCell(db, cellN, 0, white, borderOffset);
+   db = drawBorderCells(db, cellN + 2, borderOffset);
+   for (int i = 0; i < STARTER_DATA_OFFSET;i++)
+      writeCell(db, cellN, i, i, borderOffset);
 
    int val = 0;
    int bitIndex = 0;
-   while (bitIndex < (dataArrSize * 8) - STARTER_DATA_OFFSET) {
-      if ((bitIndex) / bitsPerCell >= (cellN * cellN)) {
+   while (bitIndex < (dataArrSize * 8)) {
+      if ((bitIndex) / bitsPerCell >= (cellN * cellN) - STARTER_DATA_OFFSET) {
          //std::cout << "ERROR: to much data for this box" << endl;
          //std::cout << "ERROR: missed " << (dataArrSize * 8) - bitIndex << " bits or " << ((dataArrSize * 8) - bitIndex) / 8 << " bytes" << endl;
          break;
@@ -168,105 +188,8 @@ Mat makeDataBox(const char* data, const int dataArrSize, const int cellN, const 
    return db;
 }
 
-Mat sharpenDB(const Mat& db) {
+char findColorValue(Mat& patch, Vec3b* realColors) {
 
-   Mat output = db.clone();
-
-   Mat_<Vec3b>::iterator it = output.begin<Vec3b>(), itEnd = output.end<Vec3b>();
-   for (; it != itEnd; ++it) {
-
-      (*it)[0] = ((*it)[0] < 128) ? 0 : 255;
-      (*it)[1] = ((*it)[1] < 128) ? 0 : 255;
-      (*it)[1] = ((*it)[1] < 128) ? 0 : 255;
-   }
-   cv::imwrite("sharpenedUnskewedDB.jpg", output);
-   return output;
-}
-
-string toAscii(string binaryValues) {
-   stringstream sstream(binaryValues);
-   string text;
-   while (sstream.good()) {
-      bitset<8> bits;
-      sstream >> bits;
-      char c = char(bits.to_ulong());
-      text += c;
-   }
-   return text;
-}
-
-Mat getHistogramFromImage(const Mat& image) {
-   // create an array of the histogram dimensions
-   // size is a constant - the # of buckets in each dimension
-   int dims[] = { HISTOGRAM_SIZE, HISTOGRAM_SIZE, HISTOGRAM_SIZE };
-
-   // create 3D histogram of integers initialized to zero
-   Mat hist(3, dims, CV_32S, Scalar::all(0));
-
-   // loop through all pixels and store pixel bucket
-   for (int r = 0; r < image.rows; r++) {
-      for (int c = 0; c < image.cols; c++) {
-         // stored as blue, green, red,
-         int blue = image.at<Vec3b>(r, c)[0];
-         int green = image.at<Vec3b>(r, c)[1];
-         int red = image.at<Vec3b>(r, c)[2];
-
-         // get the bucket number for each value 
-         int r = red / BUCKET_SIZE;
-         int g = green / BUCKET_SIZE;
-         int b = blue / BUCKET_SIZE;
-
-         // record the bucket value in the histogram only recording into the 0th element on scalar
-         hist.at<int>(r, g, b) += 1;
-      }
-   }
-
-   return hist;
-}
-
-void histogramMostCommonPixel(const Mat& hist, int& r, int& g, int& b) {
-   // loop through all color buckets get largest
-   for (int i = 0; i < HISTOGRAM_SIZE; i++) {
-      for (int j = 0; j < HISTOGRAM_SIZE; j++) {
-         for (int k = 0; k < HISTOGRAM_SIZE; k++) {
-            // if the current bucket has more than the selected bucket,
-            // current is new largest
-            if (hist.at<int>(i, j, k) > hist.at<int>(r, g, b)) {
-               r = i;
-               g = j;
-               b = k;
-            }
-         }
-      }
-   }
-}
-
-char findColorValue(Mat& patch) {
-   // get histogram from the image
-   Mat hist = getHistogramFromImage(patch);
-
-   // get most common pixel from histogram
-   int r, g, b;
-   r = g = b = 0;
-   histogramMostCommonPixel(hist, r, g, b);
-
-   // replace the most common pixel with background image pixel
-   int cRed = r * BUCKET_SIZE + BUCKET_SIZE / 2;
-   int cGreen = g * BUCKET_SIZE + BUCKET_SIZE / 2;
-   int cBlue = b * BUCKET_SIZE + BUCKET_SIZE / 2;
-   bool rb = cRed > 200;
-   bool gb = cGreen > 200;
-   bool bb = cBlue > 200;
-   if (!gb && !rb && !bb) { cout << "black "; return black; }
-   if (gb && rb && bb) { cout << "white "; return white; }
-   if (!gb && rb && !bb) { cout << "red "; return red; }
-   if (gb && !rb && !bb) { cout << "green "; return green; }
-   if (!gb && !rb && bb) { cout << "blue "; return blue; }
-   if (gb && !rb && bb) { cout << "cyan "; return cyan; }
-   if (!gb && rb && bb) { cout << "magenta "; return magenta; }
-   cout << "yellow ";
-   return yellow;
-   /*
    int average[] = { 0, 0, 0 };
    int size = patch.rows * patch.cols;
 
@@ -283,179 +206,18 @@ char findColorValue(Mat& patch) {
    }
 
    int closest = 255;
-   char val = NULL;
+   char val = 0;
    for (int i = 0; i < 8; i++) {
       int temp = 0;
       for (int h = 0; h < 3; h++) {
-         temp += abs(color[i][h] - average[h]);
+         temp += abs(realColors[i][h] - average[h]);
       }
       if (temp < closest) {
          closest = temp;
          val = i;
       }
-   }*/
-}
-
-void readDataBox(const Mat& inputDB, const int bitsPerCell, const int resolution) {
-
-   if (bitsPerCell > 3 || bitsPerCell < 1) {
-      std::cout << "ERROR: can only do 1,2,3 bits per cell. Input: " << bitsPerCell << endl;
-      return;
    }
-
-   Mat db = inputDB.clone();
-   Mat dbEdges = inputDB.clone();
-   GaussianBlur(dbEdges, dbEdges, Size(7, 7), 2, 2);
-   cvtColor(dbEdges, dbEdges, COLOR_BGR2GRAY);
-   Canny(dbEdges, dbEdges, 20, 60);
-
-   vector<Vec2f> lines;
-   float thresholdL = 150;
-   
-   HoughLines(dbEdges, lines, HOUGH_RESOLUTION, HOUGH_THETA, thresholdL);
-   cvtColor(dbEdges, dbEdges, COLOR_GRAY2BGR);
-   //Mat onlyLines(Size(db.cols, db.rows), CV_8UC3, Scalar(0,0,0));
-   //for (Vec2f v : lines) drawLineParameterSpace(onlyLines, v);
-   //cvtColor(dbEdges, dbEdges, COLOR_BGR2GRAY);
-   showImg(dbEdges, "onlyLines.jpg");
-   waitKey(0);
-
-   const int bitCount = bitsPerCell * resolution * resolution;
-   int cellWidth = (db.cols) / resolution * 1.02;
-   int cellHeight = (db.rows) / resolution * 1.02;
-   string binaryString = "";
-   int bitPosition = 0;
-   char curLet = NULL;
-   for (int xCellPos = (cellWidth / 2); xCellPos < db.cols; xCellPos += cellWidth) {
-      for (int yCellPos = (cellHeight / 2); yCellPos < db.rows; yCellPos += cellHeight) {
-
-         bool once = true;
-         int r = yCellPos - (cellHeight / 4);
-         int c = xCellPos - (cellWidth / 4);
-         int w = (cellWidth / 4) * 2;
-         int h = (cellHeight / 4) * 2;
-         Mat patch, patchWEdges;
-         try {
-            patch = db(Rect(r, c, w, h));
-            patchWEdges = dbEdges(Rect(r, c, w, h));
-         }
-         catch (Exception e) {
-            return;
-         }
-         int timesRan = 0;
-         while (once) {
-            timesRan++;
-            if (timesRan > 10) { cout << "ERROR LOOPING IN READING WHILE" ; break; }
-            once = false;
-            r = yCellPos - (cellHeight / 3);
-            c = xCellPos - (cellWidth / 3);
-            w = (cellWidth / 3) * 2;
-            h = (cellHeight / 3) * 2;
-
-            try {
-               patch = db(Rect(r, c, w, h));
-               patchWEdges = dbEdges(Rect(r, c, w, h));
-            }
-            catch (Exception e) {
-               return;
-            }
-            for (int i = patchWEdges.cols/2; i > 0; i--){
-               if (patchWEdges.at<Vec<uchar, 1>>(patchWEdges.cols / 2, i)[0] > EDGE_THREASHOLD) {
-                  yCellPos += i;
-                  cout << "sr " << i;
-                  once = true;
-                  continue;
-               }
-            }
-            for (int i = patchWEdges.cols / 2; i < patchWEdges.cols; i++) {
-               if (patchWEdges.at<Vec<uchar, 1>>(patchWEdges.cols / 2, i)[0] > EDGE_THREASHOLD) {
-                  yCellPos -= (patchWEdges.cols - i);
-                  cout << "sl " << i;
-                  once = true;
-                  continue;
-               }
-            }
-            for (int i = patchWEdges.rows / 2; i > 0; i--) {
-               if (patchWEdges.at<Vec<uchar, 1>>(i, patchWEdges.rows / 2)[0] > EDGE_THREASHOLD) {
-                  xCellPos += i;
-                  cout << "su " << i;
-                  once = true;
-                  continue;
-               }
-            }
-            for (int i = patchWEdges.rows / 2; i < patchWEdges.rows; i++) {
-               if (patchWEdges.at<Vec<uchar, 1>>(i, patchWEdges.rows / 2)[0] > EDGE_THREASHOLD) {
-                  xCellPos -= (patchWEdges.rows - i);
-                  cout << "sd " << i;
-                  once = true;
-                  continue;
-               }
-            }
-            /*
-            // rows right
-            for (int i = patchWEdges.cols / 2; i < patchWEdges.cols; i++) {
-               if (dbEdges.at<Vec<uchar, 1>>(i, xCellPos)[0] > EDGE_THREASHOLD) {
-                  yCellPos += (i - (r+h) + 1);
-                  cout << "sr " << (i - (r + h) + 1);
-                  continue;
-               }
-            }
-            for (int i = xCellPos; i >= c; i--) {
-               if (dbEdges.at<Vec<uchar, 1>>(yCellPos, i)[0] > EDGE_THREASHOLD) {
-                  xCellPos += (i - c - 1);
-                  cout << "su ";
-                  continue;
-               }
-            }
-            for (int i = xCellPos; i <= c + w; i++) {
-               if (dbEdges.at<Vec<uchar, 1>>(yCellPos, i)[0] > EDGE_THREASHOLD) {
-                  xCellPos += (i - (c + w) + 1);
-                  cout << "sd ";
-                  continue;
-               }
-            }*/
-
-         }
-         char colorPos = findColorValue(patch);
-         //Mat PatchWEdges = dbEdges(Rect(r, c, w, h));
-         //showImg(patch, "my patch.jpg");
-         //showImg(patchWEdges, "PatchWEdges.jpg");
-         //waitKey(0);
-         for (int l = 0; l < bitsPerCell; l++) {
-            if (bitPosition < 8) {
-               if (BIT_ISSET(colorPos, l)) {
-                  curLet += pow(2, bitPosition);
-                  std::cout << 1;
-                 }
-               else {
-                  std::cout << 0;
-               }
-               bitPosition++;
-            }
-            else {
-               bitPosition = 0;
-               binaryString += curLet;
-               curLet = NULL;
-               if (BIT_ISSET(colorPos, l)) {
-                  curLet += pow(2, bitPosition);
-                  std::cout << 1;
-               }
-               else {
-                  std::cout << 0;
-               }
-               bitPosition++;
-            }
-         }
-
-      }
-   }
-
-   std::cout << endl << "binary string output: " << binaryString << endl;
-   string outputMessage = toAscii(binaryString);
-   std::cout << "output: " << outputMessage << endl;
-   ofstream message("OutputMessage.txt");
-   message << outputMessage;
-   message.close();
+   return val;
 }
 
 int getError100(const float a, const float b) {
@@ -704,6 +466,33 @@ Point findWallIntersection(Vec2f v1, Vec2f v2) {
    }
 }
 
+Point findCellIntersection(Point startingPointA, Point endingPointA, Point startingPointB, Point endingPointB) {
+
+   double a1 = endingPointA.y - startingPointA.y;
+   double b1 = startingPointA.x - endingPointA.x;
+   double c1 = a1 * (startingPointA.x) + b1 * (startingPointA.y);
+
+   // Line CD represented as a2x + b2y = c2
+   double a2 = endingPointB.y - startingPointB.y;
+   double b2 = startingPointB.x - endingPointB.x;
+   double c2 = a2 * (startingPointB.x) + b2 * (startingPointB.y);
+
+   double determinant = a1 * b2 - a2 * b1;
+
+   if (determinant == 0)
+   {
+      // The lines are parallel. This is simplified
+      // by returning a pair of FLT_MAX
+      return Point(FLT_MAX, FLT_MAX);
+   }
+   else
+   {
+      double x = (b2 * c1 - b1 * c2) / determinant;
+      double y = (a1 * c2 - a2 * c1) / determinant;
+      return Point(x, y);
+   }
+}
+
 int findRotation(const Mat& img, Point2f* srcPoints, Point2f* dstPointsForRotation) {
    Mat colorCheck;
    Mat Matrix = getPerspectiveTransform(srcPoints, dstPointsForRotation);
@@ -742,7 +531,7 @@ Mat findDataBox(const Mat& img, vector<int> ratios) {
 
    bool broke = pointsV.first[0] == 0 && pointsV.first[1] == 0 && pointsV.second[0] == 0 && pointsV.second[1] == 0;
    if (broke) {
-      Mat rot = getRotationMatrix2D(Point(edgeImage.cols /2, edgeImage.rows /2), 45, 1.0);
+      Mat rot = getRotationMatrix2D(Point(edgeImage.cols / 2, edgeImage.rows / 2), 45, 1.0);
       warpAffine(edgeImage, edgeImage, rot, Size(edgeImage.rows, edgeImage.cols));
       warpAffine(unskewed_image, unskewed_image, rot, Size(edgeImage.rows, edgeImage.cols));
       //showImg(edgeImage, "Rotated by 45 Degrees.jpg");
@@ -755,17 +544,17 @@ Mat findDataBox(const Mat& img, vector<int> ratios) {
       cout << "ERROR, could not find data box even after rotating 45 degrees" << endl << endl;
       return img;
    }
-   //Mat EdgeCopy = edgeImage.clone();
-   //GaussianBlur(EdgeCopy, EdgeCopy, Size(5, 5), 2, 2);
+   Mat EdgeCopy = edgeImage.clone();
+   GaussianBlur(EdgeCopy, EdgeCopy, Size(5, 5), 2, 2);
    //showImg(EdgeCopy, "edgeImageBefore.jpg", 4);
-   ////waitKey(0);
-   //cvtColor(EdgeCopy, EdgeCopy, COLOR_GRAY2BGR);
-   //drawLineStandardXY(EdgeCopy, pointsH.first);
-   //drawLineStandardXY(EdgeCopy, pointsH.second);
-   //drawLineStandardXY(EdgeCopy, pointsV.first);
-   //drawLineStandardXY(EdgeCopy, pointsV.second);
+   //waitKey(0);
+   cvtColor(EdgeCopy, EdgeCopy, COLOR_GRAY2BGR);
+   drawLineStandardXY(EdgeCopy, pointsH.first);
+   drawLineStandardXY(EdgeCopy, pointsH.second);
+   drawLineStandardXY(EdgeCopy, pointsV.first);
+   drawLineStandardXY(EdgeCopy, pointsV.second);
    //showImg(EdgeCopy, "edgeImageAfter.jpg", 4);
-   ////waitKey(0);
+   //waitKey(0);
 
    Point p = findWallIntersection(pointsH.first, pointsV.first);
    Point2f c1 = findWallIntersection(pointsH.first, pointsV.first);
@@ -791,6 +580,181 @@ Mat findDataBox(const Mat& img, vector<int> ratios) {
    return unskewed_image;
 }
 
+bool colorMatchVec3b(const Scalar colorTrue, const Scalar colorCheck, const int threshError) {
+   for (int i = 0; i < 3; i++) {
+      if (abs(colorTrue[i] - colorCheck[i]) > threshError) return false;
+   }
+   return true;
+}
+
+Vec3b getAvgColorVal(Mat& cell) {
+   int aveB = 0;
+   int aveG = 0;
+   int aveR = 0;
+   int pixelCount = cell.rows * cell.cols;
+   for (int row = 0; row < cell.rows; row++) {
+      for (int col = 0; col < cell.cols; col++) {
+         aveB += cell.at<Vec3b>(row, col)[0];
+         aveG += cell.at<Vec3b>(row, col)[1];
+         aveR += cell.at<Vec3b>(row, col)[2];
+      }
+   }
+   aveB = aveB / pixelCount;
+   aveG = aveG / pixelCount;
+   aveR = aveR / pixelCount;
+   Vec3b c;
+   c[0] = aveB;
+   c[1] = aveG;
+   c[2] = aveR;
+   return c;
+}
+
+string readDataBox(const Mat& db, const Mat& cellCenters, const int bitsPerCell) {
+   Vec3b curColors[8];
+   int cellWidth = cellCenters.at<Vec<int, 2>>(1, 0)[1] - cellCenters.at<Vec<int, 2>>(0, 0)[1];
+   int cellHeight = cellCenters.at<Vec<int, 2>>(0, 1)[0] - cellCenters.at<Vec<int, 2>>(0, 0)[0];
+   cellWidth = cellWidth / 4;
+   cellHeight = cellHeight / 4;
+   String output = "";
+
+   vector<bool> currentChar = { 0,0,0,0,0,0,0,0 };
+   int currentCharIndex = 0;
+   for (int cRow = 0; cRow < cellCenters.rows; cRow++) {
+      for (int cCol = 0; cCol < cellCenters.cols; cCol++) {
+         int r = cellCenters.at<Vec<int, 2>>(cRow, cCol)[0] - cellHeight;
+         int c = cellCenters.at<Vec<int, 2>>(cRow, cCol)[1] - cellWidth;
+         Mat cell;
+         try {
+            cell = db(Rect(r, c, 2 * cellHeight, 2 * cellWidth));
+         }
+         catch (exception e) { return output; }
+         if (cCol < 8 && cRow == 0) {
+            curColors[cCol] = getAvgColorVal(cell);
+         }
+         else {
+            char colorPos = findColorValue(cell, curColors);
+            for (int i = 0; i < bitsPerCell; i++) {
+               if (BIT_ISSET(colorPos, i)) {
+                  currentChar[currentCharIndex] = 1;
+               }
+               currentCharIndex++;
+               if (currentCharIndex == currentChar.size()) {
+                  currentCharIndex = 0;
+                  char c = 0;
+                  for (int j = 0; j < currentChar.size(); j++) {
+                     if (currentChar[j])
+                        c += pow(2, j);
+                  }
+                  currentChar = { 0,0,0,0,0,0,0,0 };
+                  output += (char)c;
+               }
+            }
+         }
+      }
+   }
+   return output;
+}
+
+Point pointTopWallImg(const int a, const int b, const int size)
+{
+   return Point(a, b);
+}
+Point pointBottomWallImg(const int a, const int b, const int size)
+{
+   return Point(size - 1, b);
+}
+Point pointLeftWallImg(const int a, const int b, const int size)
+{
+   return Point(b, a);
+}
+Point pointRightWallImg(const int a, const int b, const int size)
+{
+   return Point(b, size - 1);
+}
+
+Mat findCellPoints(const Mat& input, const int cellN) {
+   int cellNBorder = cellN + 2;
+   const int dimsOWB[] = { cellNBorder, cellNBorder };
+   Mat outputWBorder(2, dimsOWB, CV_32SC2, Scalar::all(0)); // each cell hold (row,col) of its pixel
+   Mat edgeImage = input.clone();
+   Mat DrawPoints = input.clone();
+   float cellWidth = edgeImage.cols / cellNBorder;
+
+   int cd2 = cellWidth / 2; // cell divided by 2
+   Scalar whiteRef = input.at<Vec3b>(cd2, cd2); // white pixel taken from image
+   Scalar blackRef = input.at<Vec3b>(cd2, input.cols - cd2); // black pixel taken from image
+   Point(*getPointImg[4])(const int, const int, const int) = { pointTopWallImg, pointBottomWallImg, pointLeftWallImg, pointRightWallImg };
+
+   int lastBlack = 0;
+   int lastWhite = 0;
+   int lastEdge = 0;
+   int countWall = 0;
+   int countNothing = 0;
+   
+   for (int j = 0; j < 4; j++) {
+      for (int i = cd2; i < edgeImage.cols; i++) {
+         Scalar Color = input.at<Vec3b>(cd2, i);
+         bool isWhite = colorMatchVec3b(input.at<Vec3b>(getPointImg[j](cd2, i, input.cols - cd2)), whiteRef, COLOR_DIFF_THRESHOLD);
+         bool isBlack = colorMatchVec3b(input.at<Vec3b>(getPointImg[j](cd2, i, input.cols - cd2)), blackRef, COLOR_DIFF_THRESHOLD);
+
+         if (isWhite) {
+            if (lastBlack > lastWhite) { // most recent was black AKA color change Edge detected
+               int avg = (i + lastEdge - countNothing - 1) / 2;
+               countNothing = 0;
+               Point p = getPointImg[j](cd2, avg, input.cols - cd2);
+               outputWBorder.at<Vec<int, 2>>(getPointImg[j](0, countWall, cellNBorder)) = { p.x, p.y }; // row, col format
+               //circle(DrawPoints, p, 3, color[red], 2);
+               //showImg(DrawPoints, "DrawPoints.jpg");
+               //waitKey(0);
+               countWall++;
+               if (countWall == cellNBorder) break;
+               lastEdge = i;
+            }
+            lastWhite = i;
+         }
+         else if (isBlack) {
+            if (lastBlack < lastWhite) { // most recent was black AKA color change Edge detected
+               int avg = (i + lastEdge - countNothing - 1) / 2;
+               countNothing = 0;
+               Point p = getPointImg[j](cd2, avg, input.cols - cd2);
+               outputWBorder.at<Vec<int, 2>>(getPointImg[j](0, countWall, cellNBorder)) = { p.x, p.y }; // row, col format
+               //circle(DrawPoints, p, 3, color[red], 2);
+               //showImg(DrawPoints, "DrawPoints.jpg");
+               //waitKey(0);
+               countWall++;
+               if (countWall == cellNBorder) break;
+               lastEdge = i;
+            }
+            lastBlack = i;
+         }
+         else countNothing++;
+      }
+      lastBlack = 0;
+      lastWhite = 0;
+      lastEdge = 0;
+      countWall = 0;
+      countNothing = 0;
+   }
+
+   const int dims[] = { cellN, cellN };
+   Mat output(2, dims, CV_32SC2, Scalar::all(0)); // each cell hold (row,col) of its pixel
+
+   for (int r = 1; r < cellNBorder - 1; r++) {
+      for (int c = 1; c < cellNBorder - 1; c++) {
+         Point prs = Point(outputWBorder.at<Vec<int, 2>>(r, 0)[0], outputWBorder.at<Vec<int, 2>>(r, 0)[1]);
+         Point pre = Point(outputWBorder.at<Vec<int, 2>>(r, cellNBorder - 1)[0], outputWBorder.at<Vec<int, 2>>(r, cellNBorder -1)[1]);
+         Point pcs = Point(outputWBorder.at<Vec<int, 2>>(0,c)[0], outputWBorder.at<Vec<int, 2>>(0,c)[1]);
+         Point pce = Point(outputWBorder.at<Vec<int, 2>>(cellNBorder - 1, c)[0], outputWBorder.at<Vec<int, 2>>(cellNBorder - 1, c)[1]);
+         Point p = findCellIntersection(prs,pre,pcs,pce);
+         //circle(DrawPoints, p, 3, color[red], 2);
+         //showImg(DrawPoints, "DrawPoints.jpg");
+         //waitKey(0);
+         output.at<Vec<int, 2>>(r - 1, c - 1) = p;
+      }
+   }
+   return output;
+}
+
 int main(int argc, char* argv[])
 {
    //string s = "da";
@@ -803,19 +767,25 @@ int main(int argc, char* argv[])
    //string s = "Understanding the Data Box (Non CV): Border of the image has a specific ratio between edges for detection. Ratio Shown: 2 : 6 : 2 : 3 : 2 : 2 : 1 : 1 : 3 : 2. Black Corner represents Top Left and helps the detector rotate the image correctly for data retrieval. Data is displayed as octal.Each color represents 3 bits(0 - 7) black = 000(0) | white = 001(1) | red = 010(2) green = 011(3) | yellow = 100(4) | blue = 101(5) magenta = 110(6) | cyan = 111(7). Data Box has 32x32 cells which can hold a total of 384 bytes";
    //string s = "Steps For Project: Create Data Box. Encrypt input string to bits and  converted to color values based on a cypher where:. each color represents 3 bits based on its position in the array of colors. Create an identification border with modifiable ratios of white to black bordersIdentify Data Box(CV).Takes in a picture from a camera of a scene containing a Data Box and perform edge detection.Iterate through the edge image to find instances of the identification border ration between edges.Identify the edges of the DataBox using the Hough spaceCropand unskew the Data Box to a readable square.Read the Data Box(CV).Iterate through the cells in the DataBoxand adds their associated binary bit value to an array.Translates the binary string to ASCII";
    std::cout << "length = " << s.length() << endl;
+
+   // set data for use
    const char* sd = s.data();
    char* dataOut = (char*)malloc(sizeof(char) * (s.length() + 1));
-
-   
    vector<int> borderRatios = { 2, 6, 2, 3, 2, 2, 1, 1, 3, 2 }; // ratio 2:6:2:3:2:2:1:1:3:2 total p = 24 = 6 cells (DO NOT CHANGE) RatioMatch function has HARD CODE
+   int cellN = 24;
+   int resolution = 1024;
+   int bitsPerCell = 3;
+
 
    // Record start time
    auto start = std::chrono::high_resolution_clock::now();
-   Mat overlay = makeDataBox(sd, s.length(), 32, 1024, 3, borderRatios);
+   Mat overlay = makeDataBox(sd, s.length(), cellN, resolution, bitsPerCell, borderRatios);
    // Record start time
    auto finish = std::chrono::high_resolution_clock::now();
    std::chrono::duration<double> elapsed = finish - start;
    std::cout << "Elapsed time: " << elapsed.count() << " s\n";
+
+
    //GaussianBlur(overlay, overlay, Size(7, 7), 2, 2);
    //cvtColor(overlay, overlay, COLOR_BGR2GRAY);
    //Canny(overlay, overlay, 20, 60);
@@ -824,16 +794,23 @@ int main(int argc, char* argv[])
    //showImg(overlay, "overlayEdgeDetected.jpg");
    //waitKey(0);
 
-   Mat real = imread("testReal17.jpg");
+   //Mat real = imread("testReal18.jpg");
 
    start = std::chrono::high_resolution_clock::now();
-   Mat result = findDataBox(real, borderRatios);
+   //Mat result = findDataBox(real, borderRatios);
    finish = std::chrono::high_resolution_clock::now();
    elapsed = finish - start;
    std::cout << "Elapsed time total find: " << elapsed.count() << " s\n";
    //readDataBox(result,3, 32); 
-   showImg(result, "result.jpg");
-   waitKey(0);
+   //showImg(result, "result.jpg");
+   //waitKey(0);
+
+   Mat unskewed = imread("result.jpg");
+   Mat cellPoints = findCellPoints(unskewed, cellN);
+
+   string fromDB = readDataBox(unskewed, cellPoints, bitsPerCell);
+
+   cout << " output From DB: " << fromDB << endl;
 
    return 0;
 }
