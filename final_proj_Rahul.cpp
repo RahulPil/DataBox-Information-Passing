@@ -112,7 +112,11 @@ void showImg(const Mat& img, string name, int shrinkVal = 1) {
 
 }
 
-// pre: A valid Mat image that will be processed, integers to...
+// pre: A valid Mat image (databox) that will be processed, integers to hold the following:
+// cellN: number of cells per row in the databox
+// cellIndex: index of the cell that needs to be writted with respect to the databox
+// val: the bit value that is trying to be encrypted
+// offset: where the cell is in the image
 // post: A set of pixels called cells are encrypted by color to hold some particular data.
 // writeCell: Function encrypts a passed in integer to 
 void writeCell(Mat& db, const int cellN, const int cellIndex, const int val, const float offset = 0) {
