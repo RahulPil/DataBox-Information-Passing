@@ -1,3 +1,20 @@
+// Rahul Pillalamarri, Griffin Detracy, Camas Collins 
+// CSS 487 Final Project
+// The purpose of this implementation file is to create, read, and find a databox in a given real world image. 
+// A databox is created by encrypting a string as different color cells such that the box is filled with different color values.
+// Borders with a particular ratio as well as a special mark on the top left corner is then created and added to the databox to enable for
+// initial identification of the databox.
+// The databox is initially found in a real life image by converting the image to greyscale and then iterating through it to find the ratios 
+// of the border. Once the ratios are found, the edges are then sent to the opencv hough line function
+// in order to detect the inner edges of the databox. If multiple lines for an edge are detected then the average line is found and that is the line that is 
+// deemed as the edge. Then we find the intersection points of all the edge lines detected and crop/unskew the image using those 4 interesection/corner points. 
+// The reading of the databox is then done by iterating through the image and decrypting the different color values to get the original string. 
+
+// OpenCv conversion warnings removed
+#pragma warning( disable : 4056 ) 
+#pragma warning( disable : 4244 )
+#pragma warning( disable : 4267 )
+
 #define BIT_ISSET(var, pos) (!!((var) & (1ULL<<(pos))))
 #define BORDER_PERCENT_ERROR_THRESHHOLD 40
 #define EDGE_THREASHOLD 200
@@ -17,6 +34,7 @@
 #define INTERNAL_BORDER_N(cellN) (cellN + 2)
 #define CELL_WIDTH(imgSize, cellN) (imgSize / cellN)
 
+
 // ratios of a data box
 #define RAT0 2
 #define RAT1 6
@@ -29,6 +47,8 @@
 #define RAT8 3
 #define RAT9 2
 
+
+// ratios index meant to be base 1 in normal and flipped
 #define RATIO_1BASE1 6
 #define RATIO_2BASE1 7
 #define RATIOF_1BASE1 2
@@ -65,6 +85,7 @@
 using namespace cv;
 using namespace std;
 
+
 static vector<int> borderRatios = { RAT0, RAT1, RAT2, RAT3, RAT4, RAT5, RAT6, RAT7, RAT8, RAT9 };
 static vector<int> borderRatiosFlipped = { RAT9, RAT8, RAT7, RAT6, RAT5, RAT4, RAT3, RAT2, RAT1, RAT0 };
 
@@ -78,6 +99,7 @@ const Vec3b color[8] = {
    Vec3b(255, 0, 255),   // magenta - 110
    Vec3b(255, 255, 0)    // cyan    - 111
 };
+
 const enum {
    black = 0,
    white,
@@ -89,7 +111,6 @@ const enum {
    cyan
 };
 
-bool PrintAll = false;
 
 // pre: a valid Mat Image and Vec2f with two floats that are within the scope of the image are passed into the function
 // post: a line is drawn on the image using the Vec2f elements as starting and ending points on the line and the opencv line function
@@ -775,6 +796,7 @@ string readDataBox(const Mat& db, const Mat& cellCenters, const int bitsPerCell)
          }
       }
    }
+
    return output;
 }
 
@@ -782,10 +804,18 @@ string readDataBox(const Mat& db, const Mat& cellCenters, const int bitsPerCell)
 // post: returns a point that is on the corrosponding walls
 // pointTopWallImg, pointBottomWallImg, pointLeftWallImg, pointRightWallImg: 
 // map functions to map to each wall of a cell based on a given a and b 
-Point pointTopWallImg(const int a, const int b, const int size) { return Point(a, b); }
-Point pointBottomWallImg(const int a, const int b, const int size) { return Point(size - 1, b); }
-Point pointLeftWallImg(const int a, const int b, const int size) { return Point(b, a); }
-Point pointRightWallImg(const int a, const int b, const int size) { return Point(b, size - 1); }
+Point pointTopWallImg(const int a, const int b, const int size) {
+   return Point(a, b); 
+}
+Point pointBottomWallImg(const int a, const int b, const int size) {
+   return Point(size - 1, b); 
+}
+Point pointLeftWallImg(const int a, const int b, const int size) {
+   return Point(b, a);
+}
+Point pointRightWallImg(const int a, const int b, const int size) { 
+   return Point(b, size - 1); 
+}
 Point(*getPointImg[4])(const int, const int, const int) = { pointTopWallImg, pointBottomWallImg, pointLeftWallImg, pointRightWallImg };
 
 // pre: takes in a valid Mat image (databox) and the number of cells in a row in the databox is passed into the function
@@ -966,6 +996,5 @@ int main(int argc, char* argv[])
       showImg(foundDataBox, "foundDataBox.jpg");
       waitKey(0);
    }
-
    return 0;
 }
