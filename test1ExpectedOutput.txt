@@ -1,1 +1,0 @@
-Computer vision is the study of methods to extract content from digital images/video for applications such as recognizing people, navigating in an unfamiliar environment, image-based rendering, and retrieving imag
