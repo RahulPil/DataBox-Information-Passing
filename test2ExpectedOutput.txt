@@ -1,0 +1,7 @@
+This is the second test
+
+The first image shows a harsh angle,
+but this image is pretty straight on
+
+I hope you like our project!
+It has been very difficult to tune this project with real images
