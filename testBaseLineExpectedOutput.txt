@@ -1,3 +1,0 @@
-This is a base Image that should be read without issue.
-This is the generated databox directly found in the image
-and it works very well...
