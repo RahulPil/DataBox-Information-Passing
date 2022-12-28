@@ -1,1 +1,0 @@
-start "" ../x64/Debug/Project3CV.exe 0 24 3 1024 test3.jpg
