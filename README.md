@@ -77,7 +77,7 @@ As a group, we all enjoyed this project. Having the opportunity to design an ori
 ### Program is meant to run on Visual Studio with openCV4.6
 By Griffin Detracy, Camas Collins, and Rahul Pillalamarri
 
-## bat Requirements
+## Bat Requirements
 Requirements for create DataBox bat
   format
     start "" [exe] [true] [cell width (# on 1 row)] [resolution width] [bits Per Cell]
@@ -91,7 +91,7 @@ Requirements for find DataBox bat (dynamically determines the bits percell when 
     start "" ../x64/Debug/Project3CV.exe 0 24 test0.jpg
 
 
-## existing bat and test images
+## Existing Bat and Test Images
 Each run_CreateDB_* bat creates a databox based on the data in InputStringDBCreation.txt
 Each runtest*_FindReadDB bat attempts to solve a use case
   test 0 is the base use case of the entire input image being the databox
@@ -103,7 +103,7 @@ Each runtest*_FindReadDB bat attempts to solve a use case
   test 6 being only 2 bits per cell
 
 
-## extra files
+## Extra Files
 InputStringDBCreation.txt contains the data to be used when creating a databox
 output.txt is generated after finding a databox, it contains the data found
 createdDataBox.jpg is generated after the program creates a new databox
