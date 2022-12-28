@@ -1,3 +1,0 @@
-For the final fourth image, we rotated it to a 45 degree diamond
-this attempts to show it correcting the rotation as needed
-this may have taken longer because it parsed once, rotated 45, then parsed again.
