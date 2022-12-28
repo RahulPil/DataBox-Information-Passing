@@ -72,3 +72,41 @@ If we were to continue with this project there are several aspects that we think
 These are just a few of the ideas for where this databox project can go, but we have many more including additional applications for out ratio detection methods. This project was a great introduction to the world of computer vision and its possibilities. There will always be room for improvement in the computer vision field, and as such we hope that our contributions will help push the boundaries of knowledge forward.
 
 As a group, we all enjoyed this project. Having the opportunity to design an original program that was based on our ideas made this project so much more meaningful to us. This project has consumed a large portion of our time over the last few weeks, however we are thrilled with the results and are glad that we were able to get the program to the state it is in. Special thanks to Professor Clark Olson for teaching us about the ins and outs of computer vision, and to our friends and families who supported us throughout this process.
+
+# Instructions for running program
+### Program is meant to run on Visual Studio with openCV4.6
+By Griffin Detracy, Camas Collins, and Rahul Pillalamarri
+
+## bat Requirements
+Requirements for create DataBox bat
+  format
+    start "" [exe] [true] [cell width (# on 1 row)] [resolution width] [bits Per Cell]
+  example
+    start "" ../x64/Debug/Project3CV.exe 1 24 1024 1
+
+Requirements for find DataBox bat (dynamically determines the bits percell when reading)
+  format
+    start "" [exe] [false] [cell width (# on 1 row)] [fileName]
+  example
+    start "" ../x64/Debug/Project3CV.exe 0 24 test0.jpg
+
+
+## existing bat and test images
+Each run_CreateDB_* bat creates a databox based on the data in InputStringDBCreation.txt
+Each runtest*_FindReadDB bat attempts to solve a use case
+  test 0 is the base use case of the entire input image being the databox
+  test 1 at an odd angle by the corner
+  test 2 at an odd angle over the image
+  test 3 being far away (relatively)
+  test 4 being rotated at an odd angle
+  test 5 being only 1 bit per cell
+  test 6 being only 2 bits per cell
+
+
+## extra files
+InputStringDBCreation.txt contains the data to be used when creating a databox
+output.txt is generated after finding a databox, it contains the data found
+createdDataBox.jpg is generated after the program creates a new databox
+
+## General Instructions
+Download all the files and then pull them from each folder so that the batch files can test the images correctly 
