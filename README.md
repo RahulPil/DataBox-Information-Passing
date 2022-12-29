@@ -27,7 +27,7 @@ There are certainly downsides to our resulting implementation. For one, the dete
 Below is a series of images describing the results of all of the steps associated with creating, finding, and reading a databox:
 Step 1 & 2:
 
-INSERT PICTURE
+![Logo](Figure1.png)
 
 Figures 1.1 and 1.2: These images represent the created databox and an image from a cell phone of the databox that is rotated and skewed. The second image will be used for the next few in the process.
   
@@ -35,7 +35,7 @@ Figures 1.1 and 1.2: These images represent the created databox and an image fro
  
  INSERT PICTURE
  
- Figures 3.1, 3.2, 3.3, and 3.4: This collection of four images represents the detected edges of the databox from the photograph of the databox shown in figure 1. These edge points will be sent to the Hough space to get the best line associated with each respective edge.
+ Figures 2.1, 2.2, 2.3, and 2.4: This collection of four images represents the detected edges of the databox from the photograph of the databox shown in figure 1. These edge points will be sent to the Hough space to get the best line associated with each respective edge.
 
 Step 4:
 
