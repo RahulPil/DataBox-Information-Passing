@@ -27,34 +27,34 @@ There are certainly downsides to our resulting implementation. For one, the dete
 Below is a series of images describing the results of all of the steps associated with creating, finding, and reading a databox:
 Step 1 & 2:
 
-![Logo](Figure1.png)
+![Figure1](Figure1.png)
 
 Figures 1.1 and 1.2: These images represent the created databox and an image from a cell phone of the databox that is rotated and skewed. The second image will be used for the next few in the process.
   
  Step 3:
  
- INSERT PICTURE
+![Figure2](Figure2.png)
  
  Figures 2.1, 2.2, 2.3, and 2.4: This collection of four images represents the detected edges of the databox from the photograph of the databox shown in figure 1. These edge points will be sent to the Hough space to get the best line associated with each respective edge.
 
 Step 4:
 
-INSERT PICTURE
+![Figure3](Figure3.png)
 
-Figures 4.1 and 4.2: The databox after it has been extracted from the image in figure 1, it is rotated to the correct orientation represented in the right image.
+Figures 3.1 and 3.2: The databox after it has been extracted from the image in figure 1, it is rotated to the correct orientation represented in the right image.
   
  Step 5:
  
- INSERT PICTURE
+![Figure4](Figure4.png)
  
- Figure 5: databox image after it has been transformed and cropped. Image is ready
+ Figure 4: databox image after it has been transformed and cropped. Image is ready
 to be read.
 
 Step 6:
 
-INSERT PICTURE
+![Figure5](Figure5.png)
 
-Figure 6.1 and 6.2*: Find the center point of each cell (depicted visually by the red dots on each cell) and use the associated cell color to decrypt the message.
+Figure 5.1 and 5.2*: Find the center point of each cell (depicted visually by the red dots on each cell) and use the associated cell color to decrypt the message.
 *Checkered border was added at a later date from the first five steps to improve consistency in reading the databox. All databoxes now include the checkered border.
 
 ## 5.0 Lessons Learned
