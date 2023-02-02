@@ -1,4 +1,4 @@
-# CSS-487-Final-Project DataBox Information Passing
+# DataBox Information Passing
 ## 1.0 Introduction
 Message passing and data encryption have been used for quite some time now, however in our final project we developed a new form of message passing through encrypted pictures that we call data boxes. A databox is an N*N image where each cell in the image is part of an encrypted string. The encryption is done by converting each character in an input string into raw bits where each set of three bits corresponds to a particular color value. Then a cell in the databox, starting with the top left, is set to that color value such that each character in the input string becomes encrypted to a series of color values as adjacent cells inside the databox.
 
